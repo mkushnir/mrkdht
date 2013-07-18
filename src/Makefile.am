@@ -14,7 +14,7 @@ nobase_include_HEADERS = mrkdht.h
 
 noinst_HEADERS =
 
-libmrkdht_la_SOURCES = foo.c mrkdht.c
+libmrkdht_la_SOURCES = mrkdht.c
 nodist_libmrkdht_la_SOURCES = diag.c
 
 if DEBUG
