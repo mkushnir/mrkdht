@@ -121,8 +121,7 @@ bucket_dump(mrkdht_bucket_t **bucket, UNUSED void *udata)
 }
 
 
-UNUSED
-static void
+UNUSED static void
 nodes_dump(void)
 {
     list_traverse(&nodes,

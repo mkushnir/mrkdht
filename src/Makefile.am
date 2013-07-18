@@ -25,7 +25,7 @@ endif
 
 libmrkdht_la_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I$(includedir)
 
-libmrkdht_la_LDFLAGS = -version-info 0:0:0 -L$(libdir) -lmrkcommon
+libmrkdht_la_LDFLAGS = -version-info 0:0:0 -L$(libdir) -lmrkcommon -lmrkthr -lmrkdata -lmrkrpc
 
 SUBDIRS = . test
 

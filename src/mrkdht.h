@@ -6,6 +6,8 @@ extern "C" {
 #endif
 
 
+void mrkdht_init(void);
+void mrkdht_fini(void);
 
 #ifdef __cplusplus
 }
