@@ -44,8 +44,9 @@ test0(void)
 UNUSED static int
 test1(UNUSED int argc, UNUSED void *argv[])
 {
-    int res;
-    res = mrkthr_sleep(2000);
+    int res = 0;
+    mrkdht_set_me(1234, "localhost", 0x1234);
+    mrkdht_run();
     CTRACE("res=%d", res);
     return 0;
 }
@@ -54,7 +55,7 @@ test1(UNUSED int argc, UNUSED void *argv[])
 int
 main(void)
 {
-    mrkthr_ctx_t *thr;
+    UNUSED mrkthr_ctx_t *thr;
     struct sigaction sa;
 
     MEMDEBUG_REGISTER(testfoo);
@@ -74,7 +75,7 @@ main(void)
 
     mrkdht_init();
 
-    if ((thr = mrkthr_new(NULL, test1, 0)) == NULL) {
+    if ((thr = mrkthr_new("test1", test1, 0)) == NULL) {
         FAIL("mrkthr_new");
     }
     mrkthr_run(thr);

@@ -2,7 +2,7 @@ AUTOMAKE_OPTIONS = foreign
 CLEANFILES = *.core
 #CLEANFILES += *.in
 
-noinst_PROGRAMS=testfoo
+noinst_PROGRAMS=testfoo testping
 
 distdir = ../../$(PACKAGE)-$(VERSION)/src/test
 dist_HEADERS = unittest.h
@@ -18,9 +18,14 @@ DEBUG_FLAGS = -DNDEBUG -O3
 endif
 
 nodist_testfoo_SOURCES = ../diag.c
+
 testfoo_SOURCES = testfoo.c
 testfoo_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)
-testfoo_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht
+testfoo_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht -lmrkrpc -lmrkdata -lmrkthr
+
+testping_SOURCES = testping.c
+testping_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)
+testping_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht -lmrkrpc -lmrkdata -lmrkthr
 
 ../diag.c ../diag.h: ../diag.txt
 	sh ../gen-diag
