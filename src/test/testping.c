@@ -108,9 +108,11 @@ main(int argc, char **argv)
 
 
     MEMDEBUG_REGISTER(testfoo);
+#ifndef NDEBUG
     MEMDEBUG_REGISTER(array);
     MEMDEBUG_REGISTER(list);
     MEMDEBUG_REGISTER(trie);
+#endif
 
     while ((ch = getopt(argc, argv, "i:np:")) != -1) {
         switch (ch) {
