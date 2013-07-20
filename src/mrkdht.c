@@ -41,6 +41,8 @@ static mrkdata_spec_t *value_spec;
 /* rpc ops */
 #define MRKDHT_MSG_PING 0x01
 #define MRKDHT_MSG_PONG 0x02
+#define MRKDHT_FIND_NODE_REQ 0x03
+#define MRKDHT_FIND_NODE_RESP 0x04
 
 /* util */
 
@@ -272,6 +274,8 @@ mrkdht_ping(UNUSED mrkdht_node_t *node)
 
 
 /* rpc ops */
+
+/**/
 
 static int
 msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
