@@ -18,9 +18,11 @@ const char *malloc_options = "AJ";
 
 /* configuration */
 
+static const char *myhost = NULL;
 static unsigned long myport;
 static uint64_t mynid;
 
+static const char *pinghost = NULL;
 static unsigned long pingport;
 static uint64_t pingnid;
 static mrkdht_node_t *pingnode;
@@ -43,7 +45,7 @@ pinger(UNUSED int argc, UNUSED void **argv)
     int res;
 
     while (1) {
-        mrkthr_sleep(100);
+        mrkthr_sleep(10);
         res = mrkdht_ping(pingnode);
         if (res != 0) {
             CTRACE("res=%d", res);
@@ -59,7 +61,7 @@ test1(UNUSED int argc, UNUSED void **argv)
     int i;
     mrkthr_ctx_t *thr;
 
-    mrkdht_set_me(mynid, "localhost", myport);
+    mrkdht_set_me(mynid, myhost, myport);
     mrkdht_run();
 
     mrkthr_sleep(5000);
@@ -68,7 +70,7 @@ test1(UNUSED int argc, UNUSED void **argv)
         CTRACE("Now testing ping ...");
 
         if ((pingnode = mrkdht_make_node(pingnid,
-                                         "localhost",
+                                         pinghost,
                                          pingport)) == NULL) {
             FAIL("mrkdht_make_node");
         }
@@ -114,11 +116,19 @@ main(int argc, char **argv)
     MEMDEBUG_REGISTER(trie);
 #endif
 
-    while ((ch = getopt(argc, argv, "i:np:")) != -1) {
+    while ((ch = getopt(argc, argv, "h:H:i:np:")) != -1) {
         switch (ch) {
         case 'i':
             myport = strtol(optarg, NULL, 10);
             mynid = 0xdadadada00000000 | myport;
+            break;
+
+        case 'h':
+            myhost = strdup(optarg);
+            break;
+
+        case 'H':
+            pinghost = strdup(optarg);
             break;
 
         case 'n':
@@ -136,8 +146,16 @@ main(int argc, char **argv)
         }
     }
 
+    if (myhost == NULL) {
+        errx(1, "Please supply my host via -h option.");
+    }
+
     if (myport < 1024 || myport > 65535) {
         errx(1, "Please supply my port between 1024 and 65535 via -i option.");
+    }
+
+    if (pinghost == NULL) {
+        errx(1, "Please supply ping host via -H option.");
     }
 
     if (pingport < 1024 || pingport > 65535) {

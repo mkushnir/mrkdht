@@ -71,7 +71,7 @@ monitor(UNUSED int argc, UNUSED void **argv)
     while (1) {
         size_t volume, length;
 
-        mrkthr_sleep(5000);
+        mrkthr_sleep(2000);
         mrkthr_compact_sleepq(25000);
         volume = mrkthr_get_sleepq_volume();
         length = mrkthr_get_sleepq_length();

@@ -18,7 +18,7 @@ libmrkdht_la_SOURCES = mrkdht.c
 nodist_libmrkdht_la_SOURCES = diag.c
 
 if DEBUG
-DEBUG_FLAGS = -g -O0 -ftrapv -fcatch-undefined-behavior
+DEBUG_FLAGS = -g -O0 $(CLANG_DEBUG)
 else
 DEBUG_FLAGS = -DNDEBUG -O3
 endif
