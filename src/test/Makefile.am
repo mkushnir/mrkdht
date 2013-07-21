@@ -21,7 +21,7 @@ nodist_testfoo_SOURCES = ../diag.c
 
 testfoo_SOURCES = testfoo.c
 testfoo_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)
-testfoo_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht -lmrkrpc -lmrkdata -lmrkthr
+testfoo_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht -lmrkthr -lmrkapp
 
 testping_SOURCES = testping.c
 testping_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)

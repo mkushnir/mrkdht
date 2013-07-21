@@ -20,12 +20,11 @@ const char *malloc_options = "AJ";
 
 static const char *myhost = NULL;
 static unsigned long myport;
-static uint64_t mynid;
+static mrkdht_nid_t mynid;
 
 static const char *pinghost = NULL;
 static unsigned long pingport;
-static uint64_t pingnid;
-static mrkdht_node_t *pingnode;
+static mrkdht_nid_t pingnid;
 
 static int noping = 0;
 
@@ -45,8 +44,8 @@ pinger(UNUSED int argc, UNUSED void **argv)
     int res;
 
     while (1) {
-        mrkthr_sleep(10);
-        res = mrkdht_ping(pingnode);
+        mrkthr_sleep(1000);
+        res = mrkdht_ping(pingnid);
         if (res != 0) {
             CTRACE("res=%d", res);
         }
@@ -69,13 +68,11 @@ test1(UNUSED int argc, UNUSED void **argv)
     if (noping == 0) {
         CTRACE("Now testing ping ...");
 
-        if ((pingnode = mrkdht_make_node(pingnid,
-                                         pinghost,
-                                         pingport)) == NULL) {
-            FAIL("mrkdht_make_node");
+        if (mrkdht_make_node_from_params(pingnid, pinghost, pingport) != 0) {
+            FAIL("mrkdht_make_node_from_params");
         }
 
-        for (i = 0; i < 50; ++i) {
+        for (i = 0; i < 1; ++i) {
             if ((thr = mrkthr_new(NULL, pinger, 0)) == NULL) {
                 FAIL("mrkthr_new");
             }
@@ -83,7 +80,6 @@ test1(UNUSED int argc, UNUSED void **argv)
         }
 
 
-        //mrkdht_node_destroy(&pingnode);
     } else {
         CTRACE("Not pinging ...");
     }

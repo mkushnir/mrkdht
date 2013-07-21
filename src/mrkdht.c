@@ -2,9 +2,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <netinet/in.h>
+/* getraddrinfo */
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #include <mrkcommon/dumpm.h>
-#include <mrkcommon/list.h>
+#include <mrkcommon/array.h>
+#include <mrkcommon/trie.h>
 #include <mrkcommon/memdebug.h>
 MEMDEBUG_DECLARE(mrkdht);
 #include <mrkcommon/util.h>
@@ -21,8 +27,9 @@ static unsigned mflags = 0;
 
 /* ctx */
 
-static list_t nodes;
-#define MRKDHT_IDLEN_BITS (sizeof(uint64_t) * 8)
+static array_t buckets;
+static trie_t nodes;
+#define MRKDHT_IDLEN_BITS (sizeof(mrkdht_nid_t) * 8)
 #define MRKDHT_BUCKET_MAX 4
 #define MRKDHT_ALPHA 3
 
@@ -41,26 +48,35 @@ static mrkdata_spec_t *value_spec;
 /* rpc ops */
 #define MRKDHT_MSG_PING 0x01
 #define MRKDHT_MSG_PONG 0x02
-#define MRKDHT_FIND_NODE_REQ 0x03
+#define MRKDHT_FIND_NODES_REQ 0x03
 #define MRKDHT_FIND_NODE_RESP 0x04
+
+static mrkdht_bucket_t *buckets_get_bucket(mrkdht_nid_t);
+static void bucket_remove_node(mrkdht_bucket_t *, mrkdht_node_t *);
+static void bucket_update_node(mrkdht_bucket_t *, mrkdht_node_t *);
+static int bucket_add_node(mrkdht_bucket_t *, mrkdht_node_t *);
+static int mrkdht_ping_node(mrkrpc_node_t *);
+
 
 /* util */
 
-UNUSED static uint64_t
-distance_to_bucket(uint64_t id)
+UNUSED static int
+distance_to_bucket_id(mrkdht_nid_t distance)
 {
-    return flsll(id) - 1;
+    /* XXX we know that this is uint64_t */
+    return flsll(distance) - 1;
 }
 
 
-UNUSED static uint64_t
-distance(uint64_t a, uint64_t b)
+static mrkdht_nid_t
+distance(mrkdht_nid_t a, mrkdht_nid_t b)
 {
+    /* XXX we know that this is uint64_t */
     return a ^ b;
 }
 
 
-static int
+UNUSED static int
 null_initializer(void **o)
 {
     *o = NULL;
@@ -70,7 +86,7 @@ null_initializer(void **o)
 static int
 monitor(UNUSED int argc, UNUSED void **argv)
 {
-    while (1) {
+    while (!(mflags & MRKDHT_MFLAG_SHUTDOWN)) {
         size_t volume, length;
 
         mrkthr_sleep(2000);
@@ -84,6 +100,11 @@ monitor(UNUSED int argc, UNUSED void **argv)
         length = mrkrpc_ctx_get_pending_length(&rpc);
         CTRACE("pending: vol=%ld len=%ld", volume, length);
     }
+
+    mrkrpc_shutdown();
+    mrkrpc_ctx_fini(&rpc);
+    CTRACE("exiting monitor ...");
+
     return 0;
 }
 
@@ -96,6 +117,7 @@ node_init(mrkdht_node_t *node)
     mrkrpc_node_init(&node->rpc_node);
     node->distance = 0;
     node->last_seen = 0;
+    DTQUEUE_ENTRY_INIT(link, node);
     return 0;
 }
 
@@ -106,82 +128,140 @@ node_fini(mrkdht_node_t *node)
     mrkrpc_node_fini(&node->rpc_node);
     node->distance = 0;
     node->last_seen = 0;
+    DTQUEUE_ENTRY_FINI(link, node);
     return 0;
 }
 
-
-mrkdht_node_t *
-mrkdht_make_node(uint64_t nid, const char *hostname, int port)
+int
+mrkdht_make_node_from_params(mrkdht_nid_t nid,
+                             const char *hostname,
+                             int port)
 {
-    mrkdht_node_t *node;
+    int res;
+    struct addrinfo hints, *ai = NULL, *pai;
+    char portstr[32];
 
-    if ((node = malloc(sizeof(mrkdht_node_t))) == NULL) {
-        FAIL("malloc");
+    memset(&hints, '\0', sizeof(struct addrinfo));
+    hints.ai_family = rpc.family;
+    hints.ai_socktype = rpc.socktype;
+    hints.ai_protocol = rpc.protocol;
+    snprintf(portstr, sizeof(portstr), "%d", port);
+
+    if (getaddrinfo(hostname, portstr, &hints, &ai) != 0) {
+        TRRET(MRKDHT_MAKE_NODE_FROM_PARAMS + 1);
     }
 
-    if (mrkrpc_node_init_from_params(&node->rpc_node, nid, hostname, port)) {
-        free(node);
-        node = NULL;
-    }
-    node->distance = distance(me.rpc_node.nid, nid);
-    node->last_seen = mrkthr_get_now();
+    for (pai = ai;
+         pai != NULL;
+         pai = pai->ai_next) {
 
-    return node;
+        if ((res = mrkdht_make_node_from_addr(nid,
+                                              pai->ai_addr,
+                                              pai->ai_addrlen)) == 0) {
+            break;
+        }
+    }
+
+    if (ai != NULL) {
+        freeaddrinfo(ai);
+    }
+
+    return res;
 }
 
 
 int
-mrkdht_node_destroy(mrkdht_node_t **node)
+mrkdht_make_node_from_addr(mrkdht_nid_t nid,
+                           struct sockaddr *addr,
+                           socklen_t addrlen)
+{
+    mrkdht_node_t *node = NULL;
+    trie_node_t *trn;
+    mrkdht_bucket_t *bucket;
+
+    if ((trn = trie_find_exact(&nodes, nid)) != NULL) {
+        mrkrpc_node_t *tmp;
+
+        /* XXX crit section around trn and trn->value */
+        assert(trn->value != NULL);
+
+        node = trn->value;
+
+        assert(node->rpc_node.nid == nid);
+
+        if ((bucket = buckets_get_bucket(node->distance)) == NULL) {
+            TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 1);
+        }
+
+        if ((tmp = mrkrpc_make_node_from_addr(nid,
+                                              addr,
+                                              addrlen)) != NULL) {
+
+            /*
+             * XXX if node's hostname/port is not the same, update and check
+             * liveness
+             */
+            if (!mrkrpc_nodes_equal(&node->rpc_node, tmp)) {
+                mrkrpc_node_fini(&node->rpc_node);
+                mrkrpc_node_copy(&node->rpc_node, tmp);
+                bucket_update_node(bucket, node);
+            }
+
+            mrkrpc_node_destroy(&tmp);
+
+        } else {
+            /*
+             * An attempt to make a node from invalid params, while there
+             * is such a node (nid) with different params, forget about
+             * this attempt.
+             */
+            TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 2);
+        }
+
+    } else {
+        if ((node = malloc(sizeof(mrkdht_node_t))) == NULL) {
+            FAIL("malloc");
+        }
+
+        node_init(node);
+
+        node->distance = distance(me.rpc_node.nid, nid);
+
+        if ((bucket = buckets_get_bucket(node->distance)) == NULL) {
+            mrkdht_node_destroy(&node, NULL);
+            TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 4);
+        }
+
+        if (mrkrpc_node_init_from_addr(&node->rpc_node,
+                                       nid,
+                                       addr,
+                                       addrlen) != 0) {
+            mrkdht_node_destroy(&node, NULL);
+            TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 5);
+
+        } else {
+
+            if (bucket_add_node(bucket, node) != 0) {
+                mrkdht_node_destroy(&node, NULL);
+                TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 6);
+            }
+
+            if ((trn = trie_add_node(&nodes, nid)) == NULL) {
+                FAIL("trie_add_node");
+            }
+            trn->value = node;
+        }
+    }
+    TRRET(0);
+}
+
+int
+mrkdht_node_destroy(mrkdht_node_t **node, UNUSED void *udata)
 {
     if (*node != NULL) {
         node_fini(*node);
         free(*node);
         *node = NULL;
-    }
-    return 0;
-}
-
-
-/* bucket */
-
-static int
-bucket_init(mrkdht_bucket_t *bucket)
-{
-    bucket->last_accessed = 0;
-    if (list_init(&bucket->nodes, sizeof(mrkdht_node_t *), 0,
-                  (list_initializer_t)null_initializer,
-                  (list_finalizer_t)mrkdht_node_destroy) != 0) {
-        FAIL("list_init");
-    }
-    return 0;
-}
-
-
-static int
-bucket_new(mrkdht_bucket_t **bucket)
-{
-    if ((*bucket = malloc(sizeof(mrkdht_bucket_t))) == NULL) {
-        FAIL("malloc");
-    }
-    return bucket_init(*bucket);
-}
-
-
-static int
-bucket_fini(mrkdht_bucket_t *bucket)
-{
-    list_fini(&bucket->nodes);
-    bucket->last_accessed = 0;
-    return 0;
-}
-
-static int
-bucket_destroy(mrkdht_bucket_t **bucket)
-{
-    if (*bucket != NULL) {
-        bucket_fini(*bucket);
-        free(*bucket);
-        *bucket = NULL;
     }
     return 0;
 }
@@ -194,29 +274,105 @@ node_dump(mrkdht_node_t **node, UNUSED void *udata)
 }
 
 
+/* bucket */
+
 static int
-bucket_dump(mrkdht_bucket_t **bucket, UNUSED void *udata)
+bucket_init(mrkdht_bucket_t *bucket)
 {
-    list_traverse(&(*bucket)->nodes,
-                  (list_traverser_t)node_dump,
-                  NULL);
+    bucket->last_accessed = 0;
+    DTQUEUE_INIT(&bucket->nodes);
+    return 0;
+}
+
+
+static int
+bucket_fini(mrkdht_bucket_t *bucket)
+{
+    DTQUEUE_FINI(&bucket->nodes);
+    bucket->last_accessed = 0;
+    return 0;
+}
+
+static int
+bucket_dump(mrkdht_bucket_t *bucket, void *udata)
+{
+    mrkdht_node_t *node;
+
+    for (node = DTQUEUE_HEAD(&bucket->nodes);
+         node != NULL;
+         node = DTQUEUE_NEXT(link, node)) {
+
+        node_dump(&node, udata);
+    }
     return 0;
 }
 
 
 UNUSED static void
-nodes_dump(void)
+buckets_dump(void)
 {
-    list_traverse(&nodes,
-                 (list_traverser_t)bucket_dump,
-                 NULL);
+    array_traverse(&buckets,
+                   (array_traverser_t)bucket_dump,
+                   NULL);
+}
+
+static mrkdht_bucket_t *
+buckets_get_bucket(mrkdht_nid_t distance)
+{
+    return (mrkdht_bucket_t *)array_get(&buckets,
+                                        distance_to_bucket_id(distance));
+}
+
+static void
+bucket_remove_node(mrkdht_bucket_t *bucket, mrkdht_node_t *node)
+{
+    assert(bucket->id == distance_to_bucket_id(node->distance));
+    assert(!DTQUEUE_ORPHAN(&bucket->nodes, link, node));
+
+    DTQUEUE_REMOVE(&bucket->nodes, link, node);
 }
 
 
-UNUSED static int
-node_update(UNUSED mrkdht_node_t *node)
+static void
+bucket_update_node(mrkdht_bucket_t *bucket, mrkdht_node_t *node)
 {
-    return 0;
+    assert(bucket->id == distance_to_bucket_id(node->distance));
+    assert(!DTQUEUE_ORPHAN(&bucket->nodes, link, node));
+
+    DTQUEUE_REMOVE(&bucket->nodes, link, node);
+    node->last_seen = mrkthr_get_now();
+    DTQUEUE_ENQUEUE(&bucket->nodes, link, node);
+}
+
+
+static int
+bucket_add_node(mrkdht_bucket_t *bucket, mrkdht_node_t *node)
+{
+    assert(bucket->id == distance_to_bucket_id(node->distance));
+    assert(DTQUEUE_ORPHAN(&bucket->nodes, link, node));
+
+    if (DTQUEUE_LENGTH(&bucket->nodes) >= MRKDHT_BUCKET_MAX) {
+        mrkdht_node_t *oldest;
+
+        oldest = DTQUEUE_HEAD(&bucket->nodes);
+
+        /* check if the oldest is alive */
+        if (mrkdht_ping_node(&oldest->rpc_node) == 0) {
+            /* yes, make it the newest one */
+            bucket_update_node(bucket, oldest);
+            TRRET(BUCKET_ADD_NODE + 1);
+        } else {
+            /* no, get rid of oldest, and welcome the node */
+            bucket_remove_node(bucket, oldest);
+            node->last_seen = mrkthr_get_now();
+            DTQUEUE_ENQUEUE(&bucket->nodes, link, node);
+        }
+
+    } else {
+        node->last_seen = mrkthr_get_now();
+        DTQUEUE_ENQUEUE(&bucket->nodes, link, node);
+    }
+    TRRET(0);
 }
 
 
@@ -225,13 +381,18 @@ node_update(UNUSED mrkdht_node_t *node)
 static int
 rpc_server(UNUSED int argc, UNUSED void *argv[])
 {
+    CTRACE();
     mrkrpc_run(&rpc);
+    CTRACE();
     mrkrpc_serve(&rpc);
+    CTRACE();
+    mrkrpc_ctx_fini(&rpc);
+    CTRACE();
     return 0;
 }
 
 void
-mrkdht_set_me(uint64_t nid, const char *hostname, int port)
+mrkdht_set_me(mrkdht_nid_t nid, const char *hostname, int port)
 {
     mrkrpc_ctx_set_me(&rpc, nid, hostname, port);
     node_init(&me);
@@ -257,13 +418,13 @@ mrkdht_run(void)
     return 0;
 }
 
-int
-mrkdht_ping(UNUSED mrkdht_node_t *node)
+static int
+mrkdht_ping_node(mrkrpc_node_t *node)
 {
     int res;
     mrkdata_datum_t *rv = NULL;
 
-    res = mrkrpc_call(&rpc, &node->rpc_node, MRKDHT_MSG_PING, NULL, &rv);
+    res = mrkrpc_call(&rpc, node, MRKDHT_MSG_PING, NULL, &rv);
     //TRACE("res=%d rv=%p", res, rv);
     if (rv != NULL) {
         mrkdata_datum_dump(rv);
@@ -273,9 +434,25 @@ mrkdht_ping(UNUSED mrkdht_node_t *node)
 }
 
 
+int
+mrkdht_ping(mrkdht_nid_t nid)
+{
+    trie_node_t *trn;
+    mrkdht_node_t *node;
+
+    if ((trn = trie_find_exact(&nodes, nid)) == NULL) {
+        TRRET(MRKDHT_PING + 1);
+    }
+    assert(trn->value != NULL);
+    node = trn->value;
+
+    return mrkdht_ping_node(&node->rpc_node);
+}
+
+
 /* rpc ops */
 
-/**/
+/* ping */
 
 static int
 msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
@@ -286,6 +463,14 @@ msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
         return 123;
     }
     qe->op = MRKDHT_MSG_PONG;
+    /*
+     * Update this node in our table of nodes.
+     */
+    if (mrkdht_make_node_from_addr(qe->peer->nid,
+                                   qe->peer->addr,
+                                   qe->peer->addrlen) != 0) {
+        TRACE("mrkdht_make_node_from_addr");
+    }
     return 0;
 }
 
@@ -324,7 +509,6 @@ void
 mrkdht_shutdown(void)
 {
     mflags |= MRKDHT_MFLAG_SHUTDOWN;
-    mrkrpc_shutdown();
 }
 
 
@@ -375,11 +559,13 @@ mrkdht_init(void)
                        NULL,
                        msg_pong_resp_handler);
 
-    if (list_init(&nodes, sizeof(mrkdht_bucket_t *), MRKDHT_IDLEN_BITS,
-                  (list_initializer_t)bucket_new,
-                  (list_finalizer_t)bucket_destroy) != 0) {
+    if (array_init(&buckets, sizeof(mrkdht_bucket_t *), MRKDHT_IDLEN_BITS,
+                    (array_initializer_t)bucket_init,
+                    (array_finalizer_t)bucket_fini) != 0) {
         FAIL("list_init");
     }
+
+    trie_init(&nodes);
 
     mflags |= MRKDHT_MFLAG_INITIALIZED;
 }
@@ -391,7 +577,10 @@ mrkdht_fini(void)
         return;
     }
 
-    list_fini(&nodes);
+    trie_traverse(&nodes, (trie_traverser_t)mrkdht_node_destroy, NULL);
+    trie_fini(&nodes);
+
+    array_fini(&buckets);
 
     mrkrpc_fini();
 

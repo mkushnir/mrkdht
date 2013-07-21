@@ -4,26 +4,28 @@
 #include <stdint.h>
 
 #include <mrkcommon/list.h>
+#include <mrkcommon/dtqueue.h>
 #include <mrkrpc.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef enum _mrkdht_op {
-    MRKDHT_OP_PING,
-} mrkdht_op_t;
+typedef mrkrpc_nid_t mrkdht_nid_t;
+#define MRKDHT_NID_T_DEFINED
 
 typedef struct _mrkdht_node {
     mrkrpc_node_t rpc_node;
-    uint64_t distance;
+    mrkdht_nid_t distance;
     uint64_t last_seen;
+    DTQUEUE_ENTRY(_mrkdht_node, link);
 } mrkdht_node_t;
 #define MRKDHT_NODE_T_DEFINED
 
 typedef struct _mrkdht_bucket {
+    int id;
     uint64_t last_accessed;
-    list_t nodes;
+    DTQUEUE(_mrkdht_node, nodes);
 } mrkdht_bucket_t;
 
 typedef struct _mrkdht_ctx {
@@ -33,7 +35,8 @@ typedef struct _mrkdht_ctx {
 
 #ifdef __cplusplus
 }
+#endif
 
 #include <mrkdht.h>
-#endif
+
 #endif /* MRKDHT_PRIVATE_H_DEFINED */

@@ -47,5 +47,6 @@ AC_CHECK_LIB(mrkcommon, _fini, [], [AC_MSG_FAILURE(libmrkcommon.so is required. 
 AC_CHECK_LIB(mrkthr, _fini, [], [AC_MSG_FAILURE(libmrkthr.so is required. Please find it at git@github.com:mkushnir/mrkthr.git)]) 
 AC_CHECK_LIB(mrkdata, _fini, [], [AC_MSG_FAILURE(libmrkdata.so is required. Please find it at git@github.com:mkushnir/mrkdata.git)]) 
 AC_CHECK_LIB(mrkrpc, _fini, [], [AC_MSG_FAILURE(libmrkrpc.so is required. Please find it at git@github.com:mkushnir/mrkrpc.git)]) 
+AC_CHECK_LIB(mrkapp, _fini, [], [AC_MSG_FAILURE(libmrkapp.so is required. Please find it at git@github.com:mkushnir/mrkapp.git)]) 
 
 AC_OUTPUT
