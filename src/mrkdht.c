@@ -87,18 +87,20 @@ static int
 monitor(UNUSED int argc, UNUSED void **argv)
 {
     while (!(mflags & MRKDHT_MFLAG_SHUTDOWN)) {
-        size_t volume, length;
+        size_t sleepq_volume, sleepq_length;
+        size_t pending_volume, pending_length;
 
         mrkthr_sleep(2000);
-        mrkthr_compact_sleepq(25000);
-        volume = mrkthr_get_sleepq_volume();
-        length = mrkthr_get_sleepq_length();
-        CTRACE("sleepq: vol=%ld len=%ld", volume, length);
 
-        mrkrpc_ctx_compact_pending(&rpc, 125000);
-        volume = mrkrpc_ctx_get_pending_volume(&rpc);
-        length = mrkrpc_ctx_get_pending_length(&rpc);
-        CTRACE("pending: vol=%ld len=%ld", volume, length);
+        sleepq_volume = mrkthr_get_sleepq_volume();
+        sleepq_length = mrkthr_get_sleepq_length();
+        pending_volume = mrkrpc_ctx_get_pending_volume(&rpc);
+        pending_length = mrkrpc_ctx_get_pending_length(&rpc);
+        CTRACE("sleepq: %ld/%ld pending: %ld/%ld",
+               sleepq_volume,
+               sleepq_length,
+               pending_volume,
+               pending_length);
     }
 
     mrkrpc_shutdown();
@@ -228,7 +230,8 @@ mrkdht_make_node_from_addr(mrkdht_nid_t nid,
         node->distance = distance(me.rpc_node.nid, nid);
 
         if ((bucket = buckets_get_bucket(node->distance)) == NULL) {
-            mrkdht_node_destroy(&node, NULL);
+            node_fini(node);
+            free(node);
             TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 4);
         }
 
@@ -236,13 +239,15 @@ mrkdht_make_node_from_addr(mrkdht_nid_t nid,
                                        nid,
                                        addr,
                                        addrlen) != 0) {
-            mrkdht_node_destroy(&node, NULL);
+            node_fini(node);
+            free(node);
             TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 5);
 
         } else {
 
             if (bucket_add_node(bucket, node) != 0) {
-                mrkdht_node_destroy(&node, NULL);
+                node_fini(node);
+                free(node);
                 TRRET(MRKDHT_MAKE_NODE_FROM_ADDR + 6);
             }
 
@@ -255,13 +260,16 @@ mrkdht_make_node_from_addr(mrkdht_nid_t nid,
     TRRET(0);
 }
 
-int
-mrkdht_node_destroy(mrkdht_node_t **node, UNUSED void *udata)
+static int
+node_destroy(trie_node_t *trn, UNUSED void *udata)
 {
-    if (*node != NULL) {
-        node_fini(*node);
-        free(*node);
-        *node = NULL;
+    mrkdht_node_t *node;
+
+    node = trn->value;
+
+    if (node != NULL) {
+        node_fini(node);
+        free(node);
     }
     return 0;
 }
@@ -378,22 +386,94 @@ bucket_add_node(mrkdht_bucket_t *bucket, mrkdht_node_t *node)
 
 /* operation */
 
+/* rpc ops */
+
+/* ping */
+
+static int
+msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
+                     mrkrpc_queue_entry_t *qe)
+{
+    int res;
+
+    //TRACE("op=%02x -> %02x", qe->op, MRKDHT_MSG_PONG);
+    if (qe->op != MRKDHT_MSG_PING) {
+        return 123;
+    }
+    qe->op = MRKDHT_MSG_PONG;
+    /*
+     * Update this node in our table of nodes.
+     */
+    if (mrkdht_make_node_from_addr(qe->peer->nid,
+                                   qe->peer->addr,
+                                   qe->peer->addrlen) != 0) {
+        TRACE("mrkdht_make_node_from_addr");
+    }
+    /* simulate delay */
+    res = mrkthr_sleep(200);
+    return res;
+}
+
+static int
+msg_ping_resp_handler(UNUSED mrkrpc_ctx_t *ctx,
+                      mrkrpc_queue_entry_t *qe)
+{
+    //TRACE("op=%02x", qe->op);
+    if (qe->op != MRKDHT_MSG_PONG) {
+        return 234;
+    }
+    return 0;
+}
+
+static int
+msg_pong_req_handler(UNUSED mrkrpc_ctx_t *ctx,
+                     UNUSED mrkrpc_queue_entry_t *qe)
+{
+    /* error ever */
+    //TRACE("...");
+    return 345;
+}
+
+static int
+msg_pong_resp_handler(UNUSED mrkrpc_ctx_t *ctx,
+                      UNUSED mrkrpc_queue_entry_t *qe)
+{
+    /* OK ever */
+    //TRACE("...");
+    return 0;
+}
+
+/**/
+
 static int
 rpc_server(UNUSED int argc, UNUSED void *argv[])
 {
-    CTRACE();
     mrkrpc_run(&rpc);
-    CTRACE();
     mrkrpc_serve(&rpc);
-    CTRACE();
-    mrkrpc_ctx_fini(&rpc);
-    CTRACE();
     return 0;
 }
 
 void
 mrkdht_set_me(mrkdht_nid_t nid, const char *hostname, int port)
 {
+    if (mrkrpc_ctx_init(&rpc) != 0) {
+        FAIL("mrkrpc_ini");
+    }
+
+    mrkrpc_ctx_register_msg(&rpc,
+                       MRKDHT_MSG_PING,
+                       NULL,
+                       msg_ping_req_handler,
+                       NULL,
+                       msg_ping_resp_handler);
+
+    mrkrpc_ctx_register_msg(&rpc,
+                       MRKDHT_MSG_PONG,
+                       NULL,
+                       msg_pong_req_handler,
+                       NULL,
+                       msg_pong_resp_handler);
+
     mrkrpc_ctx_set_me(&rpc, nid, hostname, port);
     node_init(&me);
     mrkrpc_node_copy(&me.rpc_node, &rpc.me);
@@ -450,59 +530,6 @@ mrkdht_ping(mrkdht_nid_t nid)
 }
 
 
-/* rpc ops */
-
-/* ping */
-
-static int
-msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
-                     mrkrpc_queue_entry_t *qe)
-{
-    //TRACE("op=%02x -> %02x", qe->op, MRKDHT_MSG_PONG);
-    if (qe->op != MRKDHT_MSG_PING) {
-        return 123;
-    }
-    qe->op = MRKDHT_MSG_PONG;
-    /*
-     * Update this node in our table of nodes.
-     */
-    if (mrkdht_make_node_from_addr(qe->peer->nid,
-                                   qe->peer->addr,
-                                   qe->peer->addrlen) != 0) {
-        TRACE("mrkdht_make_node_from_addr");
-    }
-    return 0;
-}
-
-static int
-msg_ping_resp_handler(UNUSED mrkrpc_ctx_t *ctx,
-                      mrkrpc_queue_entry_t *qe)
-{
-    //TRACE("op=%02x", qe->op);
-    if (qe->op != MRKDHT_MSG_PONG) {
-        return 234;
-    }
-    return 0;
-}
-
-static int
-msg_pong_req_handler(UNUSED mrkrpc_ctx_t *ctx,
-                     UNUSED mrkrpc_queue_entry_t *qe)
-{
-    /* error ever */
-    //TRACE("...");
-    return 345;
-}
-
-static int
-msg_pong_resp_handler(UNUSED mrkrpc_ctx_t *ctx,
-                      UNUSED mrkrpc_queue_entry_t *qe)
-{
-    /* error ever */
-    //TRACE("...");
-    return 0;
-}
-
 /* module */
 
 void
@@ -541,24 +568,6 @@ mrkdht_init(void)
 
     mrkrpc_init();
 
-    if (mrkrpc_ctx_init(&rpc) != 0) {
-        FAIL("mrkrpc_ini");
-    }
-
-    mrkrpc_ctx_register_msg(&rpc,
-                       MRKDHT_MSG_PING,
-                       NULL,
-                       msg_ping_req_handler,
-                       NULL,
-                       msg_ping_resp_handler);
-
-    mrkrpc_ctx_register_msg(&rpc,
-                       MRKDHT_MSG_PONG,
-                       NULL,
-                       msg_pong_req_handler,
-                       NULL,
-                       msg_pong_resp_handler);
-
     if (array_init(&buckets, sizeof(mrkdht_bucket_t *), MRKDHT_IDLEN_BITS,
                     (array_initializer_t)bucket_init,
                     (array_finalizer_t)bucket_fini) != 0) {
@@ -577,7 +586,7 @@ mrkdht_fini(void)
         return;
     }
 
-    trie_traverse(&nodes, (trie_traverser_t)mrkdht_node_destroy, NULL);
+    trie_traverse(&nodes, node_destroy, NULL);
     trie_fini(&nodes);
 
     array_fini(&buckets);

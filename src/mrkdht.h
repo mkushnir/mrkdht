@@ -25,7 +25,6 @@ void mrkdht_set_me(mrkdht_nid_t, const char *, int);
 int mrkdht_run(void);
 int mrkdht_make_node_from_params(mrkdht_nid_t, const char *, int);
 int mrkdht_make_node_from_addr(mrkdht_nid_t, struct sockaddr *, socklen_t);
-int mrkdht_node_destroy(mrkdht_node_t **, void *);
 
 
 int mrkdht_ping(mrkdht_nid_t);

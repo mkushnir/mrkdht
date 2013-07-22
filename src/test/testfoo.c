@@ -13,8 +13,8 @@
 MEMDEBUG_DECLARE(testfoo)
 
 #include <mrkthr.h>
-#include <mrkdht.h>
 #include <mrkapp.h>
+#include <mrkdht.h>
 
 #ifndef NDEBUG
 const char *_malloc_options = "AJ";
@@ -22,9 +22,6 @@ const char *_malloc_options = "AJ";
 
 static int _shutdown = 0;
 static mrkthr_ctx_t *backdoor_thr;
-
-/* utilities */
-
 
 static void
 termhandler(UNUSED int sig)
@@ -127,7 +124,8 @@ main(void)
 
     if ((backdoor_thr = mrkthr_new("backdoor",
                           mrk_local_server,
-                          3,
+                          4,
+                          1,
                           "/tmp/test.sock",
                           backdoor,
                           NULL)) == NULL) {
