@@ -96,11 +96,11 @@ monitor(UNUSED int argc, UNUSED void **argv)
         sleepq_length = mrkthr_get_sleepq_length();
         pending_volume = mrkrpc_ctx_get_pending_volume(&rpc);
         pending_length = mrkrpc_ctx_get_pending_length(&rpc);
-        CTRACE("sleepq: %ld/%ld pending: %ld/%ld",
-               sleepq_volume,
-               sleepq_length,
-               pending_volume,
-               pending_length);
+        //CTRACE("sleepq: %ld/%ld pending: %ld/%ld",
+        //       sleepq_volume,
+        //       sleepq_length,
+        //       pending_volume,
+        //       pending_length);
     }
 
     mrkrpc_shutdown();
@@ -394,13 +394,13 @@ static int
 msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
                      mrkrpc_queue_entry_t *qe)
 {
-    int res;
+    int res = 0;
 
-    //TRACE("op=%02x -> %02x", qe->op, MRKDHT_MSG_PONG);
-    if (qe->op != MRKDHT_MSG_PING) {
+    //TRACE("recvop=%02x -> %02x", qe->recvop, MRKDHT_MSG_PONG);
+    if (qe->recvop != MRKDHT_MSG_PING) {
         return 123;
     }
-    qe->op = MRKDHT_MSG_PONG;
+    qe->sendop = MRKDHT_MSG_PONG;
     /*
      * Update this node in our table of nodes.
      */
@@ -410,7 +410,7 @@ msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
         TRACE("mrkdht_make_node_from_addr");
     }
     /* simulate delay */
-    res = mrkthr_sleep(200);
+    res = mrkthr_sleep(197);
     return res;
 }
 
@@ -418,8 +418,8 @@ static int
 msg_ping_resp_handler(UNUSED mrkrpc_ctx_t *ctx,
                       mrkrpc_queue_entry_t *qe)
 {
-    //TRACE("op=%02x", qe->op);
-    if (qe->op != MRKDHT_MSG_PONG) {
+    //TRACE("recvop=%02x", qe->recvop);
+    if (qe->recvop != MRKDHT_MSG_PONG) {
         return 234;
     }
     return 0;
@@ -430,7 +430,7 @@ msg_pong_req_handler(UNUSED mrkrpc_ctx_t *ctx,
                      UNUSED mrkrpc_queue_entry_t *qe)
 {
     /* error ever */
-    //TRACE("...");
+    //TRACE("ERR");
     return 345;
 }
 
@@ -439,7 +439,7 @@ msg_pong_resp_handler(UNUSED mrkrpc_ctx_t *ctx,
                       UNUSED mrkrpc_queue_entry_t *qe)
 {
     /* OK ever */
-    //TRACE("...");
+    //TRACE("OK");
     return 0;
 }
 
@@ -474,6 +474,7 @@ mrkdht_set_me(mrkdht_nid_t nid, const char *hostname, int port)
                        NULL,
                        msg_pong_resp_handler);
 
+    mrkrpc_ctx_set_call_timeout(&rpc, 200);
     mrkrpc_ctx_set_me(&rpc, nid, hostname, port);
     node_init(&me);
     mrkrpc_node_copy(&me.rpc_node, &rpc.me);
@@ -483,18 +484,8 @@ mrkdht_set_me(mrkdht_nid_t nid, const char *hostname, int port)
 int
 mrkdht_run(void)
 {
-    mrkthr_ctx_t *thr;
-
-    if ((thr = mrkthr_new("rpc_server", rpc_server, 0)) == NULL) {
-        FAIL("mrkthr_new");
-    }
-    mrkthr_run(thr);
-
-    if ((thr = mrkthr_new("monitor", monitor, 0)) == NULL) {
-        FAIL("mrkthr_new");
-    }
-    mrkthr_run(thr);
-
+    mrkthr_spawn("rpc_server", rpc_server, 0);
+    mrkthr_spawn("monitor", monitor, 0);
     return 0;
 }
 

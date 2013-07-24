@@ -54,13 +54,13 @@ backdoor(UNUSED int argc, void **argv)
         //D8(buf, nread);
 
         if (strcmp(buf, "help") == 0) {
-            const char *help = "help: quit\n";
+            const char *help = "OK help kill dumpthr quit\n";
             if (mrkthr_write_all(fd, help, strlen(help)) != 0) {
                 break;
             }
 
         } else if (strcmp(buf, "quit") == 0) {
-            const char *error = "bye\n";
+            const char *error = "OK bye\n";
 
             if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
                 /* pass through */
@@ -69,8 +69,27 @@ backdoor(UNUSED int argc, void **argv)
             termhandler(0);
             break;
 
+        } else if (strcmp(buf, "kill") == 0) {
+            const char *error = "OK killing\n";
+
+            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
+                /* pass through */
+                ;
+            }
+            mrkthr_shutdown();
+            break;
+
+        } else if (strcmp(buf, "dumpthr") == 0) {
+            const char *error = "OK dumping\n";
+
+            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
+                /* pass through */
+                ;
+            }
+            mrkthr_dump_all_ctxes();
+
         } else {
-            const char *error = "not supported, bye\n";
+            const char *error = "ERR not supported, bye\n";
             if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
                 break;
             }
@@ -89,6 +108,10 @@ test1(UNUSED int argc, UNUSED void *argv[])
     int res = 0;
     mrkdht_set_me(1234, "localhost", 0x1234);
     mrkdht_run();
+    //while (!_shutdown) {
+    //    mrkthr_dump_all_ctxes();
+    //    mrkthr_sleep(1000);
+    //}
     CTRACE("res=%d", res);
     return 0;
 }
@@ -97,7 +120,6 @@ test1(UNUSED int argc, UNUSED void *argv[])
 int
 main(void)
 {
-    UNUSED mrkthr_ctx_t *thr;
     struct sigaction sa;
 
     MEMDEBUG_REGISTER(testfoo);
@@ -117,10 +139,7 @@ main(void)
 
     mrkdht_init();
 
-    if ((thr = mrkthr_new("test1", test1, 0)) == NULL) {
-        FAIL("mrkthr_new");
-    }
-    mrkthr_run(thr);
+    mrkthr_spawn("test1", test1, 0);
 
     if ((backdoor_thr = mrkthr_new("backdoor",
                           mrk_local_server,

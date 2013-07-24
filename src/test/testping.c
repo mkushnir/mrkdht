@@ -22,6 +22,7 @@ const char *malloc_options = "AJ";
 #endif
 
 const profile_t *p_ping;
+const profile_t *p_sleep;
 
 /* configuration */
 
@@ -71,7 +72,7 @@ backdoor(UNUSED int argc, void **argv)
         //D8(buf, nread);
 
         if (strcmp(buf, "help") == 0) {
-            const char *help = "help: quit\n";
+            const char *help = "OK help kill dumpthr quit\n";
             if (mrkthr_write_all(fd, help, strlen(help)) != 0) {
                 break;
             }
@@ -85,9 +86,27 @@ backdoor(UNUSED int argc, void **argv)
             }
             termhandler(0);
             break;
+        } else if (strcmp(buf, "kill") == 0) {
+            const char *error = "OK killing\n";
+
+            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
+                /* pass through */
+                ;
+            }
+            mrkthr_shutdown();
+            break;
+
+        } else if (strcmp(buf, "dumpthr") == 0) {
+            const char *error = "OK dumping\n";
+
+            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
+                /* pass through */
+                ;
+            }
+            mrkthr_dump_all_ctxes();
 
         } else {
-            const char *error = "not supported, bye\n";
+            const char *error = "ERR not supported, bye\n";
             if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
                 break;
             }
@@ -108,7 +127,7 @@ pinger(UNUSED int argc, UNUSED void **argv)
     uint64_t elapsed;
 
     while (!_shutdown) {
-        mrkthr_sleep(100);
+        mrkthr_sleep(1000);
         profile_start(p_ping);
         res = mrkdht_ping(pingnid);
         elapsed = profile_stop(p_ping);
@@ -121,11 +140,32 @@ pinger(UNUSED int argc, UNUSED void **argv)
     return 0;
 }
 
+UNUSED static int
+printer(UNUSED int argc, UNUSED void **argv)
+{
+    uint64_t elapsed;
+
+    while (!_shutdown) {
+        size_t old_npings;
+
+        old_npings = npings;
+        profile_start(p_sleep);
+        mrkthr_sleep(1000);
+        elapsed = profile_stop(p_sleep);
+        //printf("slept: %ld\n", elapsed);
+        CTRACE("pinged: %ld", npings - old_npings);
+        //mrkthr_dump_all_ctxes();
+        //mrkthr_dump_sleepq();
+        //mrkthr_dump(mrkthr_me());
+    }
+    return 0;
+}
+
+
 static int
 test1(UNUSED int argc, UNUSED void **argv)
 {
     int i;
-    mrkthr_ctx_t *thr;
 
     mrkdht_set_me(mynid, myhost, myport);
     mrkdht_run();
@@ -140,10 +180,7 @@ test1(UNUSED int argc, UNUSED void **argv)
         }
 
         for (i = 0; i < 1; ++i) {
-            if ((thr = mrkthr_new(NULL, pinger, 0)) == NULL) {
-                FAIL("mrkthr_new");
-            }
-            mrkthr_run(thr);
+            mrkthr_spawn("pinger", pinger, 0);
         }
 
 
@@ -151,15 +188,7 @@ test1(UNUSED int argc, UNUSED void **argv)
         CTRACE("Not pinging ...");
     }
 
-    while (!_shutdown) {
-        size_t old_npings;
-
-        old_npings = npings;
-        mrkthr_sleep(5000);
-        CTRACE("pinged: %ld", npings - old_npings);
-    }
-
-
+    mrkthr_spawn("printer", printer, 0);
     return 0;
 }
 
@@ -169,7 +198,6 @@ main(int argc, char **argv)
 {
     struct sigaction sa;
     char ch;
-    mrkthr_ctx_t *thr;
     char bdpath[_POSIX_PATH_MAX];
 
 
@@ -244,27 +272,22 @@ main(int argc, char **argv)
     profile_init_module();
 
     p_ping = profile_register("ping");
+    p_sleep = profile_register("sleep");
 
     mrkthr_init();
 
     mrkdht_init();
 
-    if ((thr = mrkthr_new("test1", test1, 0)) == NULL) {
-        FAIL("mrkthr_new");
-    }
-    mrkthr_run(thr);
+    mrkthr_spawn("test1", test1, 0);
 
     snprintf(bdpath, sizeof(bdpath), "/tmp/testping.%ld.sock", myport);
-    if ((backdoor_thr = mrkthr_new("backdoor",
-                          mrk_local_server,
-                          4,
-                          1,
-                          bdpath,
-                          backdoor,
-                          NULL)) == NULL) {
-        FAIL("mrkthr_new");
-    }
-    mrkthr_run(backdoor_thr);
+    backdoor_thr = mrkthr_spawn("backdoor",
+                                mrk_local_server,
+                                4,
+                                1,
+                                bdpath,
+                                backdoor,
+                                NULL);
 
     mrkthr_loop();
 
@@ -272,7 +295,7 @@ main(int argc, char **argv)
 
     mrkthr_fini();
 
-    profile_report();
+    //profile_report();
     profile_fini_module();
 
     memdebug_print_stats();
