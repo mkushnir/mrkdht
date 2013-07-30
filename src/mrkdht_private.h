@@ -18,6 +18,7 @@ typedef struct _mrkdht_node {
     mrkrpc_node_t rpc_node;
     mrkdht_nid_t distance;
     uint64_t last_seen;
+    uint64_t rtt;
     DTQUEUE_ENTRY(_mrkdht_node, link);
 } mrkdht_node_t;
 #define MRKDHT_NODE_T_DEFINED

@@ -142,7 +142,7 @@ main(void)
     mrkthr_spawn("test1", test1, 0);
 
     if ((backdoor_thr = mrkthr_new("backdoor",
-                          mrk_local_server,
+                          local_server,
                           4,
                           1,
                           "/tmp/test.sock",

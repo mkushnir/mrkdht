@@ -18,16 +18,23 @@ typedef mrkrpc_nid_t mrkdht_nid_t;
 #define MRKDHT_NID_T_DEFINED
 #endif
 
+#define MRKDHT_IDLEN_BITS (sizeof(mrkdht_nid_t) * 8)
+#define MRKDHT_BUCKET_MAX 4
+#define MRKDHT_ALPHA 3
+
 void mrkdht_init(void);
 void mrkdht_shutdown(void);
 void mrkdht_fini(void);
+void mrkdht_buckets_dump(void);
 void mrkdht_set_me(mrkdht_nid_t, const char *, int);
+void mrkdht_dump_node(mrkdht_node_t *);
 int mrkdht_run(void);
-int mrkdht_make_node_from_params(mrkdht_nid_t, const char *, int);
-int mrkdht_make_node_from_addr(mrkdht_nid_t, struct sockaddr *, socklen_t);
 
-
+#define MRKDHT_FLAG_JOIN_NOPING (0x01)
+int mrkdht_join(mrkdht_nid_t, const char *, int, unsigned);
 int mrkdht_ping(mrkdht_nid_t);
+int mrkdht_test_find_closest_nodes(mrkdht_nid_t, size_t);
+int mrkdht_lookup_nodes(mrkdht_nid_t, mrkdht_node_t **, size_t *);
 
 #ifdef __cplusplus
 }

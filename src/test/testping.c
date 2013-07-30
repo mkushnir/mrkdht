@@ -38,6 +38,7 @@ static int noping = 0;
 
 static size_t npings = 0;
 
+/* internal */
 static int _shutdown = 0;
 static mrkthr_ctx_t *backdoor_thr;
 
@@ -72,43 +73,45 @@ backdoor(UNUSED int argc, void **argv)
         //D8(buf, nread);
 
         if (strcmp(buf, "help") == 0) {
-            const char *help = "OK help kill dumpthr quit\n";
-            if (mrkthr_write_all(fd, help, strlen(help)) != 0) {
+            const char *resp = "OK help kill dumpthr quit\n";
+            if (mrkthr_write_all(fd, resp, strlen(resp)) != 0) {
                 break;
             }
 
         } else if (strcmp(buf, "quit") == 0) {
-            const char *error = "bye\n";
+            const char *resp = "OK bye\n";
 
-            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
-                /* pass through */
+            if (mrkthr_write_all(fd, resp, strlen(resp)) != 0) {
+                /* ignore */
                 ;
             }
             termhandler(0);
             break;
-        } else if (strcmp(buf, "kill") == 0) {
-            const char *error = "OK killing\n";
 
-            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
-                /* pass through */
+        } else if (strcmp(buf, "kill") == 0) {
+            const char *resp = "OK killing\n";
+
+            if (mrkthr_write_all(fd, resp, strlen(resp)) != 0) {
+                /* ignore */
                 ;
             }
             mrkthr_shutdown();
             break;
 
         } else if (strcmp(buf, "dumpthr") == 0) {
-            const char *error = "OK dumping\n";
+            const char *resp = "OK dumping\n";
 
-            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
-                /* pass through */
+            if (mrkthr_write_all(fd, resp, strlen(resp)) != 0) {
+                /* ignore */
                 ;
             }
             mrkthr_dump_all_ctxes();
 
         } else {
-            const char *error = "ERR not supported, bye\n";
-            if (mrkthr_write_all(fd, error, strlen(error)) != 0) {
-                break;
+            const char *resp = "ERR not supported, bye\n";
+            if (mrkthr_write_all(fd, resp, strlen(resp)) != 0) {
+                /* ignore */
+                ;
             }
             break;
         }
@@ -127,7 +130,8 @@ pinger(UNUSED int argc, UNUSED void **argv)
     uint64_t elapsed;
 
     while (!_shutdown) {
-        mrkthr_sleep(1000);
+        //mrkthr_sleep((random() % 500) + 500);
+        mrkthr_sleep(100);
         profile_start(p_ping);
         res = mrkdht_ping(pingnid);
         elapsed = profile_stop(p_ping);
@@ -175,20 +179,21 @@ test1(UNUSED int argc, UNUSED void **argv)
     if (noping == 0) {
         CTRACE("Now testing ping ...");
 
-        if (mrkdht_make_node_from_params(pingnid, pinghost, pingport) != 0) {
-            FAIL("mrkdht_make_node_from_params");
+        if (mrkdht_join(pingnid, pinghost, pingport,
+                        MRKDHT_FLAG_JOIN_NOPING) != 0) {
+            FAIL("mrkdht_join");
         }
 
-        for (i = 0; i < 1; ++i) {
+        for (i = 0; i < 50; ++i) {
             mrkthr_spawn("pinger", pinger, 0);
         }
 
+        mrkthr_spawn("printer", printer, 0);
 
     } else {
         CTRACE("Not pinging ...");
     }
 
-    mrkthr_spawn("printer", printer, 0);
     return 0;
 }
 
@@ -203,9 +208,9 @@ main(int argc, char **argv)
 
     MEMDEBUG_REGISTER(testfoo);
 #ifndef NDEBUG
-    MEMDEBUG_REGISTER(array);
-    MEMDEBUG_REGISTER(list);
-    MEMDEBUG_REGISTER(trie);
+    //MEMDEBUG_REGISTER(array);
+    //MEMDEBUG_REGISTER(list);
+    //MEMDEBUG_REGISTER(trie);
 #endif
 
     while ((ch = getopt(argc, argv, "h:H:np:P:")) != -1) {
@@ -282,7 +287,7 @@ main(int argc, char **argv)
 
     snprintf(bdpath, sizeof(bdpath), "/tmp/testping.%ld.sock", myport);
     backdoor_thr = mrkthr_spawn("backdoor",
-                                mrk_local_server,
+                                local_server,
                                 4,
                                 1,
                                 bdpath,
