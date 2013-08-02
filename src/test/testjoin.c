@@ -165,6 +165,7 @@ test1(UNUSED int argc, UNUSED void *argv[])
     int res;
 
     mrkdht_set_me(mynid, myhost, myport);
+    mrkdht_set_refresh(15000);
     mrkdht_run();
 
     if (!nojoin) {
@@ -195,6 +196,11 @@ main(int argc, char **argv)
     char outfile[_POSIX_PATH_MAX];
 
     MEMDEBUG_REGISTER(testjoin);
+#ifndef NDEBUG
+    MEMDEBUG_REGISTER(array);
+    MEMDEBUG_REGISTER(list);
+    MEMDEBUG_REGISTER(trie);
+#endif
 
     while ((ch = getopt(argc, argv, "ch:H:nNp:P:")) != -1) {
         switch (ch) {

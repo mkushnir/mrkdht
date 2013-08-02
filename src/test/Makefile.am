@@ -2,7 +2,7 @@ AUTOMAKE_OPTIONS = foreign
 CLEANFILES = *.core
 #CLEANFILES += *.in
 
-noinst_PROGRAMS=testfoo testping testjoin
+noinst_PROGRAMS=testfoo testping testloadping testjoin
 
 distdir = ../../$(PACKAGE)-$(VERSION)/src/test
 dist_HEADERS = unittest.h
@@ -26,6 +26,10 @@ testfoo_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht
 testping_SOURCES = testping.c
 testping_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)
 testping_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht
+
+testloadping_SOURCES = testloadping.c
+testloadping_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)
+testloadping_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht
 
 testjoin_SOURCES = testjoin.c
 testjoin_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)

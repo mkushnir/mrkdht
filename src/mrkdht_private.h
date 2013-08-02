@@ -11,6 +11,8 @@
 extern "C" {
 #endif
 
+#define MRKDHT_RPC_TIMEOUT 200
+
 typedef mrkrpc_nid_t mrkdht_nid_t;
 #define MRKDHT_NID_T_DEFINED
 
@@ -20,6 +22,9 @@ typedef struct _mrkdht_node {
     uint64_t last_seen;
     uint64_t rtt;
     DTQUEUE_ENTRY(_mrkdht_node, link);
+    struct {
+        int unresponsive:1;
+    } flags;
 } mrkdht_node_t;
 #define MRKDHT_NODE_T_DEFINED
 
@@ -34,6 +39,10 @@ typedef struct _mrkdht_ctx {
 
 } mrkdht_ctx_t;
 
+typedef struct _mrkdht_stat_counter {
+    uint64_t ntotal;
+    uint64_t nfailures;
+} mrkdht_stat_counter_t;
 #ifdef __cplusplus
 }
 #endif
