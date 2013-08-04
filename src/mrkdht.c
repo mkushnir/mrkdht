@@ -63,7 +63,8 @@ static mrkdht_stat_counter_t stats[MRKDHT_STATS_ALL];
 #define MRKDHT_MSG_FIND_NODES_CALL 0x03
 #define MRKDHT_MSG_FIND_NODES_RET 0x04
 
-#define MRKDHT_BUCKET_PUT_NODE_FPING 1
+#define MRKDHT_BUCKET_PUT_NODE_FPING 0x01
+#define MRKDHT_REGISTER_NODE_BUCKET_OPTIONAL 0x02
 
 static mrkdht_bucket_t *buckets_get_bucket(mrkdht_nid_t);
 static void bucket_remove_node(mrkdht_bucket_t *, mrkdht_node_t *);
@@ -163,15 +164,15 @@ refresher(UNUSED int argc, UNUSED void **argv)
              bucket != NULL;
              bucket = array_next(&buckets, &it)) {
 
-            if ((bucket->last_accessed + trefresh) < now || 1) {
+            if ((bucket->last_accessed + trefresh) < now) {
                 mrkdht_nid_t dist, lookup_nid;
                 UNUSED size_t i;
 
-                //if (DTQUEUE_EMPTY(&bucket->nodes)) {
-                //    //CTRACE("bucket %d is empty, moving forward ...",
-                //    //       bucket->id);
-                //    continue;
-                //}
+                if (DTQUEUE_EMPTY(&bucket->nodes)) {
+                    //CTRACE("bucket %d is empty, moving forward ...",
+                    //       bucket->id);
+                    continue;
+                }
 
                 dist = bucket_id_to_distance(bucket->id);
                 lookup_nid = distance(me.rpc_node.nid, dist);
@@ -275,8 +276,10 @@ register_node_from_addr(mrkdht_nid_t nid,
              * put into the bucket
              */
             if (bucket_put_node(bucket, node, flags) != 0) {
-                forget_node_bucket(bucket, node);
-                TRRET(REGISTER_NODE_FROM_ADDR + 2);
+                if (!(flags & MRKDHT_REGISTER_NODE_BUCKET_OPTIONAL)) {
+                    forget_node_bucket(bucket, node);
+                    TRRET(REGISTER_NODE_FROM_ADDR + 2);
+                }
             }
 
             /*
@@ -322,9 +325,11 @@ register_node_from_addr(mrkdht_nid_t nid,
         } else {
 
             if (bucket_put_node(bucket, node, flags) != 0) {
-                node_fini(node);
-                free(node);
-                TRRET(REGISTER_NODE_FROM_ADDR + 6);
+                if (!(flags & MRKDHT_REGISTER_NODE_BUCKET_OPTIONAL)) {
+                    node_fini(node);
+                    free(node);
+                    TRRET(REGISTER_NODE_FROM_ADDR + 6);
+                }
             }
 
             trn = trie_add_node(&nodes, nid);
@@ -455,12 +460,28 @@ node_dump(mrkdht_node_t **node, UNUSED void *udata)
     return 0;
 }
 
-
 void
 mrkdht_dump_node(mrkdht_node_t *node)
 {
     node_dump(&node, NULL);
 }
+
+static int
+node_dump_trie(trie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
+{
+    if (trn->value != NULL) {
+        mrkdht_dump_node(trn->value);
+    }
+    return 0;
+}
+
+void
+mrkdht_nodes_dump(void)
+{
+    trie_traverse(&nodes, node_dump_trie, NULL);
+}
+
+
 
 mrkdht_nid_t
 mrkdht_node_get_nid(mrkdht_node_t *node)
@@ -1060,7 +1081,7 @@ ping_node(mrkdht_node_t *node)
     res = mrkrpc_call(&rpc, &node->rpc_node, MRKDHT_MSG_PING, NULL, &rv);
     node->rtt = mrkthr_get_now_ticks() - before;
 
-    //CTRACE("res=%d rv=%p", res, rv);
+    //CTRACE("res=%s rv=%p", mrkrpc_strerror(res), rv);
     //if (rv != NULL) {
     //    mrkdata_datum_dump(rv);
     //}
@@ -1094,7 +1115,6 @@ mrkdht_ping(mrkdht_nid_t nid)
 
     /* let's think it's alive (public API only) */
     node->flags.unresponsive = 0;
-
     res = ping_node(node);
 
     return res;
@@ -1145,9 +1165,10 @@ fill_shortlist(mrkdht_node_t *node,
 
         if (nid == node->rpc_node.nid) {
             /*
-             * just ping it.
+             * just ping it (forsibly).
              * XXX think of not pinging in case it's not expired
              */
+            node->flags.unresponsive = 0;
             res = ping_node(node);
 
             if (res == 0) {
@@ -1228,6 +1249,7 @@ fill_shortlist(mrkdht_node_t *node,
                 ctrn->value = node;
 
 
+                //CTRACE("data:");
                 //mrkdata_datum_dump(rv);
 
                 for (dat = list_first(&rv->data.fields, &it);
@@ -1277,14 +1299,18 @@ fill_shortlist(mrkdht_node_t *node,
                         //       "will try to register %016lx,%s,%d",
                         //       rnid, addr, port);
 
-                        if (register_node_from_params(rnid,
-                                                      addr,
-                                                      port,
-                                                      &rnode,
-                                                      MRKDHT_BUCKET_PUT_NODE_FPING) != 0) {
-                            //CTRACE("register_node_from_params failed ...");
+                        if (register_node_from_params(
+                                rnid,
+                                addr,
+                                port,
+                                &rnode,
+                                MRKDHT_BUCKET_PUT_NODE_FPING |
+                                MRKDHT_REGISTER_NODE_BUCKET_OPTIONAL) != 0) {
+                            CTRACE("register_node_from_params failed ...");
+                            //trie_remove_node(&shortlist, strn) ?
 
                         } else {
+                            //CTRACE("shortlist: registered OK");
                             strn->value = rnode;
 
                         }
@@ -1297,7 +1323,7 @@ fill_shortlist(mrkdht_node_t *node,
                 }
 
             } else {
-                CTRACE("RPC to %016lx failed (%s)", node->rpc_node.nid, diag_str(res));
+                CTRACE("RPC to %016lx failed (%s)", node->rpc_node.nid, mrkrpc_strerror(res));
                 /* remove this node from nodes and buckets */
                 forget_node(node);
                 goto ERR;
@@ -1431,20 +1457,18 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
 
         trn = TRIE_MIN(&shortlist);
         if (trn != NULL) {
-            if (trn->value == closest_node) {
+            if (trn->value != NULL && trn->value == closest_node) {
                 //CTRACE("finished lookup at:");
                 //node_dump(&closest_node, NULL);
                 break;
-            } else {
-                //CTRACE("dumping %p %p", closest_node, trn->value);
-                //if (closest_node != NULL) {
-                //    node_dump(&closest_node, NULL);
-                //}
-                //if (trn->value != NULL) {
-                //    node_dump((mrkdht_node_t **)(&trn->value), NULL);
-                //}
             }
             closest_node = trn->value;
+            //CTRACE("closest node:");
+            //if (closest_node != NULL) {
+            //    node_dump(&closest_node, NULL);
+            //} else {
+            //    CTRACE("NULL");
+            //}
         } else {
             break;
         }
@@ -1456,10 +1480,14 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
         params.contacted = &contacted;
         trie_traverse(&shortlist, select_alpha, &params);
         sz = params.i;
+
+        if (sz == 0) {
+            break;
+        }
     }
 
     //CTRACE("shortlist:");
-    //trie_traverse(&shortlist, trie_node_dump_cb, (void *)1);
+    //trie_traverse(&shortlist, node_dump_trie, NULL);
 
     /*
      * Final call, we fill shortlist for the last time from only those
@@ -1521,17 +1549,16 @@ mrkdht_join(mrkdht_nid_t nid,
 
         /* let's think it's alive (public API only) */
         rnode->flags.unresponsive = 0;
-
         if ((res = ping_node(rnode)) != 0) {
             TRRET(res);
         }
 
         memset(nodes, '\0', sizeof(nodes));
         mrkdht_lookup_nodes(me.rpc_node.nid, nodes, &sz);
-        //CTRACE("looked up with res=%d sz=%ld", res, sz);
-        //for (i = 0; i < sz; ++i) {
-        //    mrkdht_dump_node(nodes[i]);
-        //}
+        CTRACE("while joining looked up with res=%d sz=%ld", res, sz);
+        for (i = 0; i < sz; ++i) {
+            mrkdht_dump_node(nodes[i]);
+        }
 
     }
 

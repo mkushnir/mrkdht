@@ -26,6 +26,7 @@ void mrkdht_init(void);
 void mrkdht_shutdown(void);
 void mrkdht_fini(void);
 void mrkdht_buckets_dump(void);
+void mrkdht_nodes_dump(void);
 void mrkdht_set_me(mrkdht_nid_t, const char *, int);
 void mrkdht_set_refresh(uint64_t);
 void mrkdht_dump_node(mrkdht_node_t *);
