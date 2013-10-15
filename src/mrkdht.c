@@ -349,8 +349,8 @@ register_node_from_params(mrkdht_nid_t nid,
                           mrkdht_node_t **rnode,
                           unsigned flags)
 {
-    int res;
-    struct addrinfo hints, *ai = NULL, *pai = NULL;
+    int res = 0;
+    struct addrinfo hints, *ai = NULL, *pai;
     char portstr[32];
 
     memset(&hints, '\0', sizeof(struct addrinfo));
