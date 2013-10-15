@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-#define MRKDHT_RPC_TIMEOUT 200
+#define MRKDHT_RPC_TIMEOUT 2000
+#define MRKDHT_PURGE_THRESHOLD_FACTOR 1
 
 typedef mrkrpc_nid_t mrkdht_nid_t;
 #define MRKDHT_NID_T_DEFINED

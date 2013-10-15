@@ -36,17 +36,39 @@ static mrkdht_nid_t pingnid;
 
 static int noping = 0;
 
+static uint64_t pingsleep = 1000;
+static uint64_t printsleep = 1000;
+
 static size_t npings = 0;
 
 /* internal */
 static int _shutdown = 0;
 static mrkthr_ctx_t *backdoor_thr;
+static int pinger_thr_num = 1;
+static mrkthr_ctx_t **pinger_threads;
+
+static int
+delayed_shutdown(UNUSED int argc, UNUSED void **argv)
+{
+    mrkthr_sleep(pingsleep);
+    CTRACE("shutting down mrkdht module ...");
+    mrkdht_shutdown();
+    return 0;
+}
+
 
 static void
 termhandler(UNUSED int sig)
 {
+    int i;
+
     mrkthr_set_interrupt(backdoor_thr);
-    mrkdht_shutdown();
+
+    for (i = 0; i < pinger_thr_num; ++i) {
+        mrkthr_set_interrupt(pinger_threads[i]);
+    }
+
+    mrkthr_spawn("delayed_shutdown", delayed_shutdown, 0);
     _shutdown = 1;
 }
 
@@ -130,15 +152,18 @@ pinger(UNUSED int argc, UNUSED void **argv)
     uint64_t elapsed;
 
     while (!_shutdown) {
-        //mrkthr_sleep((random() % 500) + 500);
-        mrkthr_sleep(100);
+        mrkthr_sleep(pingsleep);
+
         profile_start(p_ping);
         res = mrkdht_ping(pingnid);
         elapsed = profile_stop(p_ping);
+
         //printf("%ld\n", elapsed);
+        //
         if (res != 0) {
             CTRACE("res=%d", res);
         }
+
         ++npings;
     }
     return 0;
@@ -154,7 +179,9 @@ printer(UNUSED int argc, UNUSED void **argv)
 
         old_npings = npings;
         profile_start(p_sleep);
-        mrkthr_sleep(1000);
+        if (mrkthr_sleep(1000) != 0) {
+            break;
+        }
         elapsed = profile_stop(p_sleep);
         //printf("slept: %ld\n", elapsed);
         CTRACE("pinged: %ld", npings - old_npings);
@@ -184,8 +211,14 @@ test1(UNUSED int argc, UNUSED void **argv)
             FAIL("mrkdht_join");
         }
 
-        for (i = 0; i < 50; ++i) {
-            mrkthr_spawn("pinger", pinger, 0);
+        if ((pinger_threads =
+                malloc(pinger_thr_num * sizeof(mrkthr_ctx_t *))) == NULL) {
+
+            FAIL("malloc");
+        }
+
+        for (i = 0; i < pinger_thr_num; ++i) {
+            pinger_threads[i] = mrkthr_spawn("pinger", pinger, 0);
         }
 
         mrkthr_spawn("printer", printer, 0);
@@ -213,7 +246,7 @@ main(int argc, char **argv)
     MEMDEBUG_REGISTER(trie);
 #endif
 
-    while ((ch = getopt(argc, argv, "h:H:np:P:")) != -1) {
+    while ((ch = getopt(argc, argv, "h:H:np:P:s:S:t:")) != -1) {
         switch (ch) {
         case 'h':
             myhost = strdup(optarg);
@@ -235,6 +268,18 @@ main(int argc, char **argv)
         case 'P':
             pingport = strtol(optarg, NULL, 10);
             pingnid = 0xdadadada00000000 | pingport;
+            break;
+
+        case 's':
+            pingsleep = strtol(optarg, NULL, 10);
+            break;
+
+        case 'S':
+            printsleep = strtol(optarg, NULL, 10);
+            break;
+
+        case 't':
+            pinger_thr_num = strtol(optarg, NULL, 10);
             break;
 
         default:
@@ -299,6 +344,9 @@ main(int argc, char **argv)
     mrkdht_fini();
 
     mrkthr_fini();
+
+    free(pinger_threads);
+    pinger_threads = NULL;
 
     //profile_report();
     profile_fini_module();

@@ -72,6 +72,7 @@ static int bucket_put_node(mrkdht_bucket_t *, mrkdht_node_t *, unsigned);
 static int ping_node(mrkdht_node_t *);
 static int node_dump(mrkdht_node_t **, void *);
 static void forget_node_bucket(mrkdht_bucket_t *, mrkdht_node_t *);
+static mrkdht_bucket_t *node_get_bucket(mrkdht_node_t *);
 
 
 /* util */
@@ -197,7 +198,6 @@ refresher(UNUSED int argc, UNUSED void **argv)
                 //CTRACE("bucket %d is fresh", bucket->id);
             }
         }
-
     }
 
     return 0;
@@ -652,6 +652,25 @@ stamp_bucket(mrkdht_node_t *node)
 }
 
 
+UNUSED static mrkdht_bucket_t *
+node_get_bucket(mrkdht_node_t *node)
+{
+    mrkdht_bucket_t *bucket = NULL;
+    mrkdht_node_t *tmp;
+
+    bucket = buckets_get_bucket(node->distance);
+    for (tmp = DTQUEUE_HEAD(&bucket->nodes);
+         tmp != NULL;
+         tmp = DTQUEUE_NEXT(link, tmp)) {
+
+        if (tmp == node) {
+            return bucket;
+        }
+    }
+
+    return NULL;
+}
+
 
 /*
  * basic find nodes
@@ -933,7 +952,7 @@ msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
                           qe->peer->addrlen,
                           0);
     /* simulate delay */
-    //res = mrkthr_sleep(199);
+    //res = mrkthr_sleep(3);
     return res;
 }
 
@@ -1081,7 +1100,7 @@ ping_node(mrkdht_node_t *node)
     res = mrkrpc_call(&rpc, &node->rpc_node, MRKDHT_MSG_PING, NULL, &rv);
     node->rtt = mrkthr_get_now_ticks() - before;
 
-    //CTRACE("res=%s rv=%p", mrkrpc_strerror(res), rv);
+    //CTRACE("res=%s rv=%p", mrkrpc_diag_str(res), rv);
     //if (rv != NULL) {
     //    mrkdata_datum_dump(rv);
     //}
@@ -1323,7 +1342,7 @@ fill_shortlist(mrkdht_node_t *node,
                 }
 
             } else {
-                CTRACE("RPC to %016lx failed (%s)", node->rpc_node.nid, mrkrpc_strerror(res));
+                CTRACE("RPC to %016lx failed (%s)", node->rpc_node.nid, mrkrpc_diag_str(res));
                 /* remove this node from nodes and buckets */
                 forget_node(node);
                 goto ERR;
@@ -1470,6 +1489,11 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
             //    CTRACE("NULL");
             //}
         } else {
+            break;
+        }
+
+        if (closest_node == NULL) {
+            CTRACE("Failed to find closest node ...");
             break;
         }
 
