@@ -1027,7 +1027,7 @@ rpc_server(UNUSED int argc, UNUSED void *argv[])
 }
 
 void
-mrkdht_set_me(mrkdht_nid_t nid, const char *hostname, int port)
+mrkdht_set_local_node(mrkdht_nid_t nid, const char *hostname, int port)
 {
     if (mrkrpc_ctx_init(&rpc) != 0) {
         FAIL("mrkrpc_ini");
@@ -1060,7 +1060,7 @@ mrkdht_set_me(mrkdht_nid_t nid, const char *hostname, int port)
                        node_list_spec);
 
     mrkrpc_ctx_set_call_timeout(&rpc, MRKDHT_RPC_TIMEOUT);
-    mrkrpc_ctx_set_me(&rpc, nid, hostname, port);
+    mrkrpc_ctx_set_local_node(&rpc, nid, hostname, port);
     node_init(&me);
     mrkrpc_node_copy(&me.rpc_node, &rpc.me);
 }

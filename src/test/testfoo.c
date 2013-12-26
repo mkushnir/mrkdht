@@ -106,7 +106,7 @@ static int
 test1(UNUSED int argc, UNUSED void *argv[])
 {
     int res = 0;
-    mrkdht_set_me(1234, "localhost", 0x1234);
+    mrkdht_set_local_node(1234, "localhost", 0x1234);
     mrkdht_run();
     //while (!_shutdown) {
     //    mrkthr_dump_all_ctxes();

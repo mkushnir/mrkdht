@@ -198,7 +198,7 @@ test1(UNUSED int argc, UNUSED void **argv)
 {
     int i;
 
-    mrkdht_set_me(mynid, myhost, myport);
+    mrkdht_set_local_node(mynid, myhost, myport);
     mrkdht_run();
 
     mrkthr_sleep(5000);
