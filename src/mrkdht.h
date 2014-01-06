@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+const char *mrkapp_diag_str(int);
+
 #ifndef MRKDHT_NODE_T_DEFINED
 typedef struct _mrkdht_node mrkdht_node_t;
 #define MRKDHT_NODE_T_DEFINED
@@ -40,6 +42,10 @@ int mrkdht_test_find_closest_nodes(mrkdht_nid_t, size_t);
 int mrkdht_lookup_nodes(mrkdht_nid_t, mrkdht_node_t **, size_t *);
 int
 mrkdht_find_closest_nodes(mrkdht_nid_t, mrkdht_node_t **, size_t *);
+
+size_t mrkdht_get_rpc_pending_volume(void);
+size_t mrkdht_get_rpc_pending_length(void);
+size_t mrkdht_get_rpc_sendq_length(void);
 
 #define MRKDHT_STATS_PING 0
 #define MRKDHT_STATS_PONG 1

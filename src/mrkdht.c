@@ -11,13 +11,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-//#define TRRET_DEBUG
+//#define TRRET_DEBUG_VERBOSE
 #include <mrkcommon/dumpm.h>
 #include <mrkcommon/array.h>
 #include <mrkcommon/list.h>
 #include <mrkcommon/trie.h>
-#include <mrkcommon/memdebug.h>
-MEMDEBUG_DECLARE(mrkdht);
 #include <mrkcommon/util.h>
 #include <mrkrpc.h>
 #include <mrkdata.h>
@@ -25,6 +23,9 @@ MEMDEBUG_DECLARE(mrkdht);
 
 #include "mrkdht_private.h"
 #include "diag.h"
+
+#include <mrkcommon/memdebug.h>
+MEMDEBUG_DECLARE(mrkdht);
 
 #define MRKDHT_MFLAG_INITIALIZED 0x01
 #define MRKDHT_MFLAG_SHUTDOWN 0x02
@@ -53,6 +54,9 @@ static mrkdata_spec_t *nid_spec;
 static mrkdata_spec_t *node_list_spec;
 
 static mrkdata_spec_t *value_spec;
+
+/* traffic */
+static trie_t host_infos;
 
 /* stats */
 static mrkdht_stat_counter_t stats[MRKDHT_STATS_ALL];
@@ -111,6 +115,24 @@ null_initializer(void **o)
     return 0;
 }
 
+size_t
+mrkdht_get_rpc_pending_volume(void)
+{
+    return mrkrpc_ctx_get_pending_volume(&rpc);
+}
+
+size_t
+mrkdht_get_rpc_pending_length(void)
+{
+    return mrkrpc_ctx_get_pending_length(&rpc);
+}
+
+size_t
+mrkdht_get_rpc_sendq_length(void)
+{
+    return mrkrpc_ctx_get_sendq_length(&rpc);
+}
+
 static int
 monitor(UNUSED int argc, UNUSED void **argv)
 {
@@ -146,7 +168,7 @@ refresher(UNUSED int argc, UNUSED void **argv)
     while (!(mflags & MRKDHT_MFLAG_SHUTDOWN)) {
         mrkdht_bucket_t *bucket;
         array_iter_t it;
-        uint64_t now;
+        uint64_t now, trefresh_nsec;
         mrkdht_node_t *nodes[MRKDHT_BUCKET_MAX];
         size_t sz;
 
@@ -155,6 +177,8 @@ refresher(UNUSED int argc, UNUSED void **argv)
         }
 
         now = mrkthr_get_now();
+        trefresh_nsec = trefresh * 1000000;
+
 
         /* first lookup the closest nodes */
         memset(nodes, '\0', sizeof(nodes));
@@ -203,6 +227,65 @@ refresher(UNUSED int argc, UNUSED void **argv)
     return 0;
 }
 
+/* host info */
+
+static uint64_t
+host_key(mrkrpc_node_t *node)
+{
+    uint64_t key = 0;
+
+    if (node->addr->sa_family == AF_INET) {
+        key = ((struct sockaddr_in *)(node->addr))->sin_addr.s_addr;
+    } else if (node->addr->sa_family == AF_INET6) {
+#       define u6(i) ((((struct sockaddr_in6 *)(node->addr))->sin6_addr).__u6_addr.__u6_addr32[i])
+        key = (((uint64_t)(u6(0))) << 32 | ((uint64_t)(u6(1)))) ^
+              (((uint64_t)(u6(2))) << 32 | ((uint64_t)(u6(3))));
+    } else {
+        TRACE("Unknown protocol faimly: %d", node->addr->sa_family);
+    }
+    return key;
+}
+
+static mrkdht_host_info_t *
+get_host_info(mrkrpc_node_t *node)
+{
+    uint64_t key;
+    trie_node_t *trn;
+    mrkdht_host_info_t *hi;
+
+    key = host_key(node);
+
+    //CTRACE("key=%016lx", key);
+
+    if ((trn = trie_add_node(&host_infos, (uintptr_t)key)) == NULL) {
+        FAIL("trie_add_node");
+    }
+
+    if (trn->value == NULL) {
+
+        if ((hi = malloc(sizeof(mrkdht_host_info_t))) == NULL) {
+            FAIL("malloc");
+        }
+        hi->rtt = 0;
+        hi->last_rpc_call = 0;
+        trn->value = hi;
+    } else {
+        hi = trn->value;
+    }
+
+    return hi;
+}
+
+static void
+save_host_info(mrkrpc_node_t *node, uint64_t before)
+{
+    mrkdht_host_info_t *hi;
+
+    hi = get_host_info(node);
+    hi->last_rpc_call = mrkthr_get_now_ticks();
+    hi->rtt = hi->last_rpc_call - before;
+    //TRACE("saved for %s:%d", node->hostname, node->port);
+}
 
 /* node */
 
@@ -212,7 +295,6 @@ node_init(mrkdht_node_t *node)
     mrkrpc_node_init(&node->rpc_node);
     node->distance = 0;
     node->last_seen = 0;
-    node->rtt = 0;
     node->flags.unresponsive = 0;
     DTQUEUE_ENTRY_INIT(link, node);
     return 0;
@@ -225,7 +307,6 @@ node_fini(mrkdht_node_t *node)
     mrkrpc_node_fini(&node->rpc_node);
     node->distance = 0;
     node->last_seen = 0;
-    node->rtt = 0;
     node->flags.unresponsive = 0;
     DTQUEUE_ENTRY_FINI(link, node);
     return 0;
@@ -452,10 +533,9 @@ node_dump(mrkdht_node_t **node, UNUSED void *udata)
 {
     char buf[1024];
     mrkrpc_node_str(&(*node)->rpc_node, buf, countof(buf));
-    CTRACE("<%s %s rtt=%016lx lseen=%016lx>",
+    CTRACE("<%s %s lseen=%016lx>",
            buf,
            (*node)->flags.unresponsive ? "down" : "up",
-           (*node)->rtt,
            (*node)->last_seen);
     return 0;
 }
@@ -560,7 +640,6 @@ bucket_remove_node(mrkdht_bucket_t *bucket, mrkdht_node_t *node)
         //CTRACE("next: NULL");
     }
     DTQUEUE_REMOVE(&bucket->nodes, link, node);
-    DTQUEUE_ENTRY_FINI(link, node);
     //CTRACE("after removal len=%ld", DTQUEUE_LENGTH(&bucket->nodes));
     //bucket_dump(bucket, NULL);
 }
@@ -938,12 +1017,12 @@ msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
     int res = 0;
 
     //CTRACE("recvop=%02x -> %02x", qe->recvop, MRKDHT_MSG_PONG);
-    ++(stats[MRKDHT_STATS_PONG].ntotal);
     if (qe->recvop != MRKDHT_MSG_PING) {
         ++(stats[MRKDHT_STATS_PONG].nfailures);
         return 123;
     }
     qe->sendop = MRKDHT_MSG_PONG;
+    ++(stats[MRKDHT_STATS_PONG].ntotal);
     /*
      * Revive this node.
      */
@@ -956,15 +1035,6 @@ msg_ping_req_handler(UNUSED mrkrpc_ctx_t *ctx,
     return res;
 }
 
-static int
-msg_pong_req_handler(UNUSED mrkrpc_ctx_t *ctx,
-                     UNUSED mrkrpc_queue_entry_t *qe)
-{
-    /* error ever */
-    //CTRACE("ERR");
-    return 345;
-}
-
 /* find nodes */
 
 static int
@@ -975,14 +1045,14 @@ msg_find_nodes_call_req_handler(UNUSED mrkrpc_ctx_t *ctx,
 
     //CTRACE("recvop=%02x -> %02x", qe->recvop, MRKDHT_MSG_FIND_NODES_CALL);
     if (qe->recvop != MRKDHT_MSG_FIND_NODES_CALL) {
-        return 123;
+        return MSG_FIND_NODES_CALL_REQ_HANDLER + 1;
     }
 
     /* set up send things */
     qe->sendop = MRKDHT_MSG_FIND_NODES_RET;
     qe->senddat = mrkdata_datum_from_spec(node_list_spec, NULL, 0);
     if (qe->recvdat == NULL) {
-        return 1230;
+        return MSG_FIND_NODES_CALL_REQ_HANDLER + 2;
     }
 
     /* qe->recvdat is UINT64 */
@@ -1007,15 +1077,6 @@ msg_find_nodes_call_req_handler(UNUSED mrkrpc_ctx_t *ctx,
     return res;
 }
 
-static int
-msg_find_nodes_ret_req_handler(UNUSED mrkrpc_ctx_t *ctx,
-                               UNUSED mrkrpc_queue_entry_t *qe)
-{
-    /* error ever */
-    //CTRACE("ERR");
-    return 345;
-}
-
 /**/
 
 static int
@@ -1037,27 +1098,23 @@ mrkdht_set_local_node(mrkdht_nid_t nid, const char *hostname, int port)
     mrkrpc_ctx_register_msg(&rpc,
                        MRKDHT_MSG_PING,
                        NULL,
-                       msg_ping_req_handler,
-                       NULL);
+                       msg_ping_req_handler);
 
     mrkrpc_ctx_register_msg(&rpc,
                        MRKDHT_MSG_PONG,
                        NULL,
-                       msg_pong_req_handler,
                        NULL);
 
     /* find_nodes_call, find_nodes_ret */
     mrkrpc_ctx_register_msg(&rpc,
                        MRKDHT_MSG_FIND_NODES_CALL,
                        nid_spec,
-                       msg_find_nodes_call_req_handler,
-                       NULL);
+                       msg_find_nodes_call_req_handler);
 
     mrkrpc_ctx_register_msg(&rpc,
                        MRKDHT_MSG_FIND_NODES_RET,
-                       NULL,
-                       msg_find_nodes_ret_req_handler,
-                       node_list_spec);
+                       node_list_spec,
+                       NULL);
 
     mrkrpc_ctx_set_call_timeout(&rpc, MRKDHT_RPC_TIMEOUT);
     mrkrpc_ctx_set_local_node(&rpc, nid, hostname, port);
@@ -1086,6 +1143,25 @@ mrkdht_run(void)
 }
 
 static int
+hold_on_rtt(mrkrpc_node_t *node)
+{
+    int res = 0;
+    uint64_t before;
+    mrkdht_host_info_t *hi;
+    int64_t tts;
+
+    before = mrkthr_get_now_ticks();
+    hi = get_host_info(node);
+
+    tts = (int64_t)(hi->last_rpc_call + hi->rtt) - (int64_t)before;
+    //CTRACE("rtt=%Lf tts=%Lf", mrkthr_ticksdiff2sec(hi->rtt), mrkthr_ticksdiff2sec(tts));
+    if (tts > 0) {
+        res = mrkthr_sleep_ticks(tts);
+    }
+    return res;
+}
+
+static int
 ping_node(mrkdht_node_t *node)
 {
     int res;
@@ -1096,9 +1172,13 @@ ping_node(mrkdht_node_t *node)
         TRRET(PING_NODE + 1);
     }
 
+    if (hold_on_rtt(&node->rpc_node) != 0) {
+        TRRET(PING_NODE + 2);
+    }
+
     before = mrkthr_get_now_ticks();
     res = mrkrpc_call(&rpc, &node->rpc_node, MRKDHT_MSG_PING, NULL, &rv);
-    node->rtt = mrkthr_get_now_ticks() - before;
+    save_host_info(&node->rpc_node, before);
 
     //CTRACE("res=%s rv=%p", mrkrpc_diag_str(res), rv);
     //if (rv != NULL) {
@@ -1108,14 +1188,19 @@ ping_node(mrkdht_node_t *node)
     mrkdata_datum_destroy(&rv);
 
     if (res != 0) {
+        if (res == MRKRPC_CALL_TIMEOUT) {
+            //CTRACE("RPC call timed out to this node:");
+            //mrkdht_dump_node(node);
+        }
         forget_node(node);
         ++(stats[MRKDHT_STATS_PING].nfailures);
+        res = PING_NODE + 3;
     } else {
         stamp_bucket(node);
     }
     ++(stats[MRKDHT_STATS_PING].ntotal);
 
-    return res;
+    TRRET(res);
 }
 
 
@@ -1214,23 +1299,31 @@ fill_shortlist(mrkdht_node_t *node,
                 ctrn->value = node;
 
             } else {
-                CTRACE("RPC to %016lx failed (%s)", node->rpc_node.nid, diag_str(res));
-                goto ERR;
+                CTRACE("Ping to %016lx failed (%s)", node->rpc_node.nid, diag_str(res));
+                goto bad;
             }
 
 
         } else {
             mrkdata_datum_t *arg;
             mrkdata_datum_t *rv;
+            uint64_t before;
 
             arg = mrkdata_datum_make_u64(nid);
             rv = NULL;
 
+            if (hold_on_rtt(&node->rpc_node) != 0) {
+                goto bad;
+            }
+
+            before = mrkthr_get_now_ticks();
             res = mrkrpc_call(&rpc,
                               &node->rpc_node,
                               MRKDHT_MSG_FIND_NODES_CALL,
                               arg,
                               &rv);
+
+            save_host_info(&node->rpc_node, before);
 
             mrkdata_datum_destroy(&arg);
 
@@ -1342,10 +1435,10 @@ fill_shortlist(mrkdht_node_t *node,
                 }
 
             } else {
-                CTRACE("RPC to %016lx failed (%s)", node->rpc_node.nid, mrkrpc_diag_str(res));
+                CTRACE("Find nodes call to %016lx failed (%s)", node->rpc_node.nid, mrkrpc_diag_str(res));
                 /* remove this node from nodes and buckets */
                 forget_node(node);
-                goto ERR;
+                goto bad;
             }
 
             mrkdata_datum_destroy(&rv);
@@ -1361,7 +1454,7 @@ fill_shortlist(mrkdht_node_t *node,
     return;
 
 
-ERR:
+bad:
     dist = distance(nid, node->rpc_node.nid);
     if ((strn = trie_find_exact(shortlist, dist)) != NULL) {
         trie_remove_node(shortlist, strn);
@@ -1660,6 +1753,8 @@ mrkdht_init(void)
 
     trie_init(&nodes);
 
+    trie_init(&host_infos);
+
     trefresh = 3600000;
 
     for (i = 0; i < countof(stats); ++i) {
@@ -1679,6 +1774,8 @@ mrkdht_fini(void)
 
     trie_traverse(&nodes, node_destroy, NULL);
     trie_fini(&nodes);
+
+    trie_fini(&host_infos);
 
     array_fini(&buckets);
 

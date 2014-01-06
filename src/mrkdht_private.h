@@ -11,17 +11,20 @@
 extern "C" {
 #endif
 
-#define MRKDHT_RPC_TIMEOUT 2000
-#define MRKDHT_PURGE_THRESHOLD_FACTOR 1
+#define MRKDHT_RPC_TIMEOUT 5000
 
 typedef mrkrpc_nid_t mrkdht_nid_t;
 #define MRKDHT_NID_T_DEFINED
+
+typedef struct _mrkdht_host_info {
+    uint64_t rtt;
+    uint64_t last_rpc_call;
+} mrkdht_host_info_t;
 
 typedef struct _mrkdht_node {
     mrkrpc_node_t rpc_node;
     mrkdht_nid_t distance;
     uint64_t last_seen;
-    uint64_t rtt;
     DTQUEUE_ENTRY(_mrkdht_node, link);
     struct {
         int unresponsive:1;
