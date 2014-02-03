@@ -1672,10 +1672,10 @@ mrkdht_join(mrkdht_nid_t nid,
 
         memset(nodes, '\0', sizeof(nodes));
         mrkdht_lookup_nodes(me.rpc_node.nid, nodes, &sz);
-        CTRACE("while joining looked up with res=%d sz=%ld", res, sz);
-        for (i = 0; i < sz; ++i) {
-            mrkdht_dump_node(nodes[i]);
-        }
+        //CTRACE("while joining looked up with res=%d sz=%ld", res, sz);
+        //for (i = 0; i < sz; ++i) {
+        //    mrkdht_dump_node(nodes[i]);
+        //}
 
     }
 
