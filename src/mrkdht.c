@@ -1330,7 +1330,7 @@ fill_shortlist(mrkdht_node_t *node,
             if (rv != NULL) {
                 mrkdht_nid_t dist;
                 mrkdata_datum_t **dat;
-                list_iter_t it;
+                array_iter_t it;
 
                 /* update bucket*/
                 revive_node_from_addr(node->rpc_node.nid,
@@ -1364,28 +1364,28 @@ fill_shortlist(mrkdht_node_t *node,
                 //CTRACE("data:");
                 //mrkdata_datum_dump(rv);
 
-                for (dat = list_first(&rv->data.fields, &it);
+                for (dat = array_first(&rv->data.fields, &it);
                      dat != NULL;
-                     dat = list_next(&rv->data.fields, &it)) {
+                     dat = array_next(&rv->data.fields, &it)) {
 
                     mrkdata_datum_t **fdat;
                     mrkdht_nid_t rnid;
                     char *addr;
                     int port;
 
-                    if ((fdat = list_get(&(*dat)->data.fields,
+                    if ((fdat = array_get(&(*dat)->data.fields,
                                          MRKDHT_NODE_FIELD_NID)) == NULL) {
                         CTRACE("invalid datum");
                         mrkdata_datum_dump(*dat);
                     }
                     rnid = (*fdat)->value.u64;
-                    if ((fdat = list_get(&(*dat)->data.fields,
+                    if ((fdat = array_get(&(*dat)->data.fields,
                                          MRKDHT_NODE_FIELD_ADDR)) == NULL) {
                         CTRACE("invalid datum");
                         mrkdata_datum_dump(*dat);
                     }
                     addr = (*fdat)->data.str;
-                    if ((fdat = list_get(&(*dat)->data.fields,
+                    if ((fdat = array_get(&(*dat)->data.fields,
                                          MRKDHT_NODE_FIELD_PORT)) == NULL) {
                         CTRACE("invalid datum");
                         mrkdata_datum_dump(*dat);
