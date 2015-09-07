@@ -196,11 +196,11 @@ main(int argc, char **argv)
     char outfile[_POSIX_PATH_MAX];
 
     MEMDEBUG_REGISTER(testjoin);
-#ifndef NDEBUG
-    MEMDEBUG_REGISTER(array);
-    MEMDEBUG_REGISTER(list);
-    MEMDEBUG_REGISTER(trie);
-#endif
+//#ifndef NDEBUG
+//    MEMDEBUG_REGISTER(array);
+//    MEMDEBUG_REGISTER(list);
+//    MEMDEBUG_REGISTER(trie);
+//#endif
 
     while ((ch = getopt(argc, argv, "ch:H:nNp:P:")) != -1) {
         switch (ch) {

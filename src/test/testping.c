@@ -240,11 +240,11 @@ main(int argc, char **argv)
 
 
     MEMDEBUG_REGISTER(testfoo);
-#ifndef NDEBUG
-    MEMDEBUG_REGISTER(array);
-    MEMDEBUG_REGISTER(list);
-    MEMDEBUG_REGISTER(trie);
-#endif
+//#ifndef NDEBUG
+//    MEMDEBUG_REGISTER(array);
+//    MEMDEBUG_REGISTER(list);
+//    MEMDEBUG_REGISTER(trie);
+//#endif
 
     while ((ch = getopt(argc, argv, "h:H:np:P:s:S:t:")) != -1) {
         switch (ch) {
