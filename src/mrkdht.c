@@ -15,7 +15,7 @@
 #include <mrkcommon/dumpm.h>
 #include <mrkcommon/array.h>
 #include <mrkcommon/list.h>
-#include <mrkcommon/trie.h>
+#include <mrkcommon/btrie.h>
 #include <mrkcommon/util.h>
 #include <mrkrpc.h>
 #include <mrkdata.h>
@@ -34,7 +34,7 @@ static unsigned mflags = 0;
 /* ctx */
 
 static array_t buckets;
-static trie_t nodes;
+static btrie_t nodes;
 
 static mrkrpc_ctx_t rpc;
 static mrkdht_node_t me;
@@ -56,7 +56,7 @@ static mrkdata_spec_t *node_list_spec;
 static mrkdata_spec_t *value_spec;
 
 /* traffic */
-static trie_t host_infos;
+static btrie_t host_infos;
 
 /* stats */
 static mrkdht_stat_counter_t stats[MRKDHT_STATS_ALL];
@@ -250,15 +250,15 @@ static mrkdht_host_info_t *
 get_host_info(mrkrpc_node_t *node)
 {
     uint64_t key;
-    trie_node_t *trn;
+    btrie_node_t *trn;
     mrkdht_host_info_t *hi;
 
     key = host_key(node);
 
     //CTRACE("key=%016lx", key);
 
-    if ((trn = trie_add_node(&host_infos, (uintptr_t)key)) == NULL) {
-        FAIL("trie_add_node");
+    if ((trn = btrie_add_node(&host_infos, (uintptr_t)key)) == NULL) {
+        FAIL("btrie_add_node");
     }
 
     if (trn->value == NULL) {
@@ -320,10 +320,10 @@ register_node_from_addr(mrkdht_nid_t nid,
                         unsigned flags)
 {
     mrkdht_node_t *node = NULL;
-    trie_node_t *trn;
+    btrie_node_t *trn;
     mrkdht_bucket_t *bucket;
 
-    if ((trn = trie_find_exact(&nodes, nid)) != NULL) {
+    if ((trn = btrie_find_exact(&nodes, nid)) != NULL) {
         mrkrpc_node_t *tmp;
 
         assert(trn->value != NULL);
@@ -413,7 +413,7 @@ register_node_from_addr(mrkdht_nid_t nid,
                 }
             }
 
-            trn = trie_add_node(&nodes, nid);
+            trn = btrie_add_node(&nodes, nid);
             trn->value = node;
         }
     }
@@ -469,7 +469,7 @@ register_node_from_params(mrkdht_nid_t nid,
 
 
 static int
-node_destroy(trie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
+node_destroy(btrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
 {
     mrkdht_node_t *node;
 
@@ -547,7 +547,7 @@ mrkdht_dump_node(mrkdht_node_t *node)
 }
 
 static int
-node_dump_trie(trie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
+node_dump_trie(btrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
 {
     if (trn->value != NULL) {
         mrkdht_dump_node(trn->value);
@@ -558,7 +558,7 @@ node_dump_trie(trie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
 void
 mrkdht_nodes_dump(void)
 {
-    trie_traverse(&nodes, node_dump_trie, NULL);
+    btrie_traverse(&nodes, node_dump_trie, NULL);
 }
 
 
@@ -1207,11 +1207,11 @@ ping_node(mrkdht_node_t *node)
 int
 mrkdht_ping(mrkdht_nid_t nid)
 {
-    trie_node_t *trn;
+    btrie_node_t *trn;
     mrkdht_node_t *node;
     int res;
 
-    if ((trn = trie_find_exact(&nodes, nid)) == NULL) {
+    if ((trn = btrie_find_exact(&nodes, nid)) == NULL) {
         TRRET(MRKDHT_PING + 1);
     }
     assert(trn->value != NULL);
@@ -1254,17 +1254,17 @@ mrkdht_test_find_closest_nodes(mrkdht_nid_t nid, size_t sz)
 
 static void
 fill_shortlist(mrkdht_node_t *node,
-               trie_t *shortlist,
-               trie_t *contacted,
+               btrie_t *shortlist,
+               btrie_t *contacted,
                mrkdht_nid_t nid)
 {
     int res = 0;
     mrkdht_nid_t dist;
-    trie_node_t *ctrn;
-    trie_node_t *strn;
+    btrie_node_t *ctrn;
+    btrie_node_t *strn;
 
 
-    if ((ctrn = trie_find_exact(contacted,
+    if ((ctrn = btrie_find_exact(contacted,
                                 node->rpc_node.nid)) == NULL) {
 
         if (nid == node->rpc_node.nid) {
@@ -1279,7 +1279,7 @@ fill_shortlist(mrkdht_node_t *node,
 
                 /* add the active contact to shortlist and to contacted */
                 dist = distance(nid, node->rpc_node.nid);
-                strn = trie_add_node(shortlist, dist);
+                strn = btrie_add_node(shortlist, dist);
 
                 if (strn->value == NULL) {
                     /* first seen */
@@ -1295,7 +1295,7 @@ fill_shortlist(mrkdht_node_t *node,
                     //       node->rpc_node.nid);
                 }
 
-                ctrn = trie_add_node(contacted, node->rpc_node.nid);
+                ctrn = btrie_add_node(contacted, node->rpc_node.nid);
                 ctrn->value = node;
 
             } else {
@@ -1341,7 +1341,7 @@ fill_shortlist(mrkdht_node_t *node,
 
                 /* add the active contact to shortlist and to contacted */
                 dist = distance(nid, node->rpc_node.nid);
-                strn = trie_add_node(shortlist, dist);
+                strn = btrie_add_node(shortlist, dist);
 
                 if (strn->value == NULL) {
                     /* first seen */
@@ -1357,7 +1357,7 @@ fill_shortlist(mrkdht_node_t *node,
                     //       node->rpc_node.nid);
                 }
 
-                ctrn = trie_add_node(contacted, node->rpc_node.nid);
+                ctrn = btrie_add_node(contacted, node->rpc_node.nid);
                 ctrn->value = node;
 
 
@@ -1397,7 +1397,7 @@ fill_shortlist(mrkdht_node_t *node,
                      * this nid
                      */
                     dist = distance(nid, rnid);
-                    strn = trie_add_node(shortlist, dist);
+                    strn = btrie_add_node(shortlist, dist);
 
                     if (strn->value == NULL) {
                         mrkdht_node_t *rnode;
@@ -1419,7 +1419,7 @@ fill_shortlist(mrkdht_node_t *node,
                                 MRKDHT_BUCKET_PUT_NODE_FPING |
                                 MRKDHT_REGISTER_NODE_BUCKET_OPTIONAL) != 0) {
                             CTRACE("register_node_from_params failed ...");
-                            //trie_remove_node(&shortlist, strn) ?
+                            //btrie_remove_node(&shortlist, strn) ?
 
                         } else {
                             //CTRACE("shortlist: registered OK");
@@ -1456,25 +1456,25 @@ fill_shortlist(mrkdht_node_t *node,
 
 bad:
     dist = distance(nid, node->rpc_node.nid);
-    if ((strn = trie_find_exact(shortlist, dist)) != NULL) {
-        trie_remove_node(shortlist, strn);
+    if ((strn = btrie_find_exact(shortlist, dist)) != NULL) {
+        btrie_remove_node(shortlist, strn);
     }
-    if ((ctrn = trie_find_exact(contacted, node->rpc_node.nid)) != NULL) {
-        trie_remove_node(contacted, ctrn);
+    if ((ctrn = btrie_find_exact(contacted, node->rpc_node.nid)) != NULL) {
+        btrie_remove_node(contacted, ctrn);
     }
     node->flags.unresponsive = 1;
 }
 
 
 static int
-select_alpha(trie_node_t *trn, UNUSED uint64_t key, void *udata)
+select_alpha(btrie_node_t *trn, UNUSED uint64_t key, void *udata)
 {
     mrkdht_node_t *node;
-    trie_node_t *ctrn;
+    btrie_node_t *ctrn;
     struct {
         mrkdht_node_t **alpha;
         int i;
-        trie_t *contacted;
+        btrie_t *contacted;
     } *params = udata;
 
     if (trn->value == NULL) {
@@ -1487,7 +1487,7 @@ select_alpha(trie_node_t *trn, UNUSED uint64_t key, void *udata)
 
     node = trn->value;
 
-    ctrn = trie_find_exact(params->contacted, node->rpc_node.nid);
+    ctrn = btrie_find_exact(params->contacted, node->rpc_node.nid);
     if (ctrn == NULL) {
         params->alpha[params->i] = node;
         //CTRACE("selected for alpha %016lx", node->rpc_node.nid);
@@ -1501,7 +1501,7 @@ select_alpha(trie_node_t *trn, UNUSED uint64_t key, void *udata)
 }
 
 static int
-select_result(trie_node_t *trn, UNUSED uint64_t key, void *udata)
+select_result(btrie_node_t *trn, UNUSED uint64_t key, void *udata)
 {
     mrkdht_node_t *node;
     struct {
@@ -1533,9 +1533,9 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     size_t i;
     int res;
     size_t sz;
-    trie_t shortlist;
-    trie_t contacted;
-    trie_node_t *ctrn;
+    btrie_t shortlist;
+    btrie_t contacted;
+    btrie_node_t *ctrn;
     struct {
         mrkdht_node_t **nodes;
         size_t i;
@@ -1543,8 +1543,8 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     } rparams;
 
     closest_node = NULL;
-    trie_init(&shortlist);
-    trie_init(&contacted);
+    btrie_init(&shortlist);
+    btrie_init(&contacted);
 
     /*
      * initial alpha
@@ -1554,11 +1554,11 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     res = find_closest_nodes_array(nid, alpha, &sz, me.rpc_node.nid);
 
     while (!(mflags & MRKDHT_MFLAG_SHUTDOWN)) {
-        trie_node_t *trn;
+        btrie_node_t *trn;
         struct {
             mrkdht_node_t **alpha;
             int i;
-            trie_t *contacted;
+            btrie_t *contacted;
         } params;
 
         for (i = 0; i < sz; ++i) {
@@ -1567,7 +1567,7 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
             fill_shortlist(alpha[i], &shortlist, &contacted, nid);
         }
 
-        trn = TRIE_MIN(&shortlist);
+        trn = BTRIE_MIN(&shortlist);
         if (trn != NULL) {
             if (trn->value != NULL && trn->value == closest_node) {
                 //CTRACE("finished lookup at:");
@@ -1595,7 +1595,7 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
         params.alpha = alpha;
         params.i = 0;
         params.contacted = &contacted;
-        trie_traverse(&shortlist, select_alpha, &params);
+        btrie_traverse(&shortlist, select_alpha, &params);
         sz = params.i;
 
         if (sz == 0) {
@@ -1604,7 +1604,7 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     }
 
     //CTRACE("shortlist:");
-    //trie_traverse(&shortlist, node_dump_trie, NULL);
+    //btrie_traverse(&shortlist, node_dump_trie, NULL);
 
     /*
      * Final call, we fill shortlist for the last time from only those
@@ -1613,10 +1613,10 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     rparams.nodes = rnodes;
     rparams.i = 0;
     rparams.sz = *rsz;
-    trie_traverse(&shortlist, select_result, &rparams);
+    btrie_traverse(&shortlist, select_result, &rparams);
 
     for (i = 0; i < rparams.i; ++i) {
-        ctrn = trie_find_exact(&contacted, rnodes[i]->rpc_node.nid);
+        ctrn = btrie_find_exact(&contacted, rnodes[i]->rpc_node.nid);
 
         if (ctrn == NULL) {
             //CTRACE("trying final contact: %016lx",
@@ -1632,15 +1632,15 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     rparams.nodes = rnodes;
     rparams.i = 0;
     rparams.sz = *rsz;
-    trie_traverse(&shortlist, select_result, &rparams);
+    btrie_traverse(&shortlist, select_result, &rparams);
     *rsz = rparams.i;
 
     //CTRACE("contacted:");
-    //trie_traverse(&contacted, trie_node_dump_cb, (void *)1);
+    //btrie_traverse(&contacted, btrie_node_dump_cb, (void *)1);
     //mrkdht_buckets_dump();
 
-    trie_fini(&shortlist);
-    trie_fini(&contacted);
+    btrie_fini(&shortlist);
+    btrie_fini(&contacted);
 
     return 0;
 }
@@ -1751,9 +1751,9 @@ mrkdht_init(void)
     id = 0;
     array_traverse(&buckets, (array_traverser_t)bucket_set_id, &id);
 
-    trie_init(&nodes);
+    btrie_init(&nodes);
 
-    trie_init(&host_infos);
+    btrie_init(&host_infos);
 
     trefresh = 3600000;
 
@@ -1772,10 +1772,10 @@ mrkdht_fini(void)
         return;
     }
 
-    trie_traverse(&nodes, node_destroy, NULL);
-    trie_fini(&nodes);
+    btrie_traverse(&nodes, node_destroy, NULL);
+    btrie_fini(&nodes);
 
-    trie_fini(&host_infos);
+    btrie_fini(&host_infos);
 
     array_fini(&buckets);
 
