@@ -1,7 +1,7 @@
 AUTOMAKE_OPTIONS = foreign
 
 distdir = ../$(PACKAGE)-$(VERSION)/src
-dist_HEADERS = mrkdht_private.h
+dist_HEADERS =
 
 BUILT_SOURCES = diag.c diag.h
 EXTRA_DIST = diag.txt gen-diag
@@ -12,7 +12,7 @@ lib_LTLIBRARIES = libmrkdht.la
 
 nobase_include_HEADERS = mrkdht.h
 
-noinst_HEADERS =
+noinst_HEADERS = mrkdht_private.h
 
 libmrkdht_la_SOURCES = mrkdht.c
 nodist_libmrkdht_la_SOURCES = diag.c

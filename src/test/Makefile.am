@@ -5,11 +5,11 @@ CLEANFILES = *.core
 noinst_PROGRAMS=testfoo testping testloadping testjoin
 
 distdir = ../../$(PACKAGE)-$(VERSION)/src/test
-dist_HEADERS = unittest.h
+dist_HEADERS =
 
 BUILT_SOURCES = ../diag.c ../diag.h
 
-noinst_HEADERS = ../mrkdht.h
+noinst_HEADERS = unittest.h ../mrkdht.h
 
 if DEBUG
 DEBUG_FLAGS = -g -O0 @CLANG_DEBUG@
