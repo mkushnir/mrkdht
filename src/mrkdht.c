@@ -33,8 +33,8 @@ static unsigned mflags = 0;
 
 /* ctx */
 
-static array_t buckets;
-static btrie_t nodes;
+static mnarray_t buckets;
+static mnbtrie_t nodes;
 
 static mrkrpc_ctx_t rpc;
 static mrkdht_node_t me;
@@ -56,7 +56,7 @@ static mrkdata_spec_t *node_list_spec;
 static mrkdata_spec_t *value_spec;
 
 /* traffic */
-static btrie_t host_infos;
+static mnbtrie_t host_infos;
 
 /* stats */
 static mrkdht_stat_counter_t stats[MRKDHT_STATS_ALL];
@@ -167,7 +167,7 @@ refresher(UNUSED int argc, UNUSED void **argv)
 {
     while (!(mflags & MRKDHT_MFLAG_SHUTDOWN)) {
         mrkdht_bucket_t *bucket;
-        array_iter_t it;
+        mnarray_iter_t it;
         uint64_t now, trefresh_nsec;
         mrkdht_node_t *nodes[MRKDHT_BUCKET_MAX];
         size_t sz;
@@ -250,7 +250,7 @@ static mrkdht_host_info_t *
 get_host_info(mrkrpc_node_t *node)
 {
     uint64_t key;
-    btrie_node_t *trn;
+    mnbtrie_node_t *trn;
     mrkdht_host_info_t *hi;
 
     key = host_key(node);
@@ -320,7 +320,7 @@ register_node_from_addr(mrkdht_nid_t nid,
                         unsigned flags)
 {
     mrkdht_node_t *node = NULL;
-    btrie_node_t *trn;
+    mnbtrie_node_t *trn;
     mrkdht_bucket_t *bucket;
 
     if ((trn = btrie_find_exact(&nodes, nid)) != NULL) {
@@ -469,7 +469,7 @@ register_node_from_params(mrkdht_nid_t nid,
 
 
 static int
-node_destroy(btrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
+node_destroy(mnbtrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
 {
     mrkdht_node_t *node;
 
@@ -547,7 +547,7 @@ mrkdht_dump_node(mrkdht_node_t *node)
 }
 
 static int
-node_dump_trie(btrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
+node_dump_trie(mnbtrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
 {
     if (trn->value != NULL) {
         mrkdht_dump_node(trn->value);
@@ -1207,7 +1207,7 @@ ping_node(mrkdht_node_t *node)
 int
 mrkdht_ping(mrkdht_nid_t nid)
 {
-    btrie_node_t *trn;
+    mnbtrie_node_t *trn;
     mrkdht_node_t *node;
     int res;
 
@@ -1254,14 +1254,14 @@ mrkdht_test_find_closest_nodes(mrkdht_nid_t nid, size_t sz)
 
 static void
 fill_shortlist(mrkdht_node_t *node,
-               btrie_t *shortlist,
-               btrie_t *contacted,
+               mnbtrie_t *shortlist,
+               mnbtrie_t *contacted,
                mrkdht_nid_t nid)
 {
     int res = 0;
     mrkdht_nid_t dist;
-    btrie_node_t *ctrn;
-    btrie_node_t *strn;
+    mnbtrie_node_t *ctrn;
+    mnbtrie_node_t *strn;
 
 
     if ((ctrn = btrie_find_exact(contacted,
@@ -1330,7 +1330,7 @@ fill_shortlist(mrkdht_node_t *node,
             if (rv != NULL) {
                 mrkdht_nid_t dist;
                 mrkdata_datum_t **dat;
-                array_iter_t it;
+                mnarray_iter_t it;
 
                 /* update bucket*/
                 revive_node_from_addr(node->rpc_node.nid,
@@ -1467,14 +1467,14 @@ bad:
 
 
 static int
-select_alpha(btrie_node_t *trn, UNUSED uint64_t key, void *udata)
+select_alpha(mnbtrie_node_t *trn, UNUSED uint64_t key, void *udata)
 {
     mrkdht_node_t *node;
-    btrie_node_t *ctrn;
+    mnbtrie_node_t *ctrn;
     struct {
         mrkdht_node_t **alpha;
         int i;
-        btrie_t *contacted;
+        mnbtrie_t *contacted;
     } *params = udata;
 
     if (trn->value == NULL) {
@@ -1501,7 +1501,7 @@ select_alpha(btrie_node_t *trn, UNUSED uint64_t key, void *udata)
 }
 
 static int
-select_result(btrie_node_t *trn, UNUSED uint64_t key, void *udata)
+select_result(mnbtrie_node_t *trn, UNUSED uint64_t key, void *udata)
 {
     mrkdht_node_t *node;
     struct {
@@ -1533,9 +1533,9 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     size_t i;
     int res;
     size_t sz;
-    btrie_t shortlist;
-    btrie_t contacted;
-    btrie_node_t *ctrn;
+    mnbtrie_t shortlist;
+    mnbtrie_t contacted;
+    mnbtrie_node_t *ctrn;
     struct {
         mrkdht_node_t **nodes;
         size_t i;
@@ -1554,11 +1554,11 @@ mrkdht_lookup_nodes(mrkdht_nid_t nid, mrkdht_node_t **rnodes, size_t *rsz)
     res = find_closest_nodes_array(nid, alpha, &sz, me.rpc_node.nid);
 
     while (!(mflags & MRKDHT_MFLAG_SHUTDOWN)) {
-        btrie_node_t *trn;
+        mnbtrie_node_t *trn;
         struct {
             mrkdht_node_t **alpha;
             int i;
-            btrie_t *contacted;
+            mnbtrie_t *contacted;
         } params;
 
         for (i = 0; i < sz; ++i) {
