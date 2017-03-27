@@ -917,6 +917,8 @@ fill_nodes_from_bucket_array(mrkdht_bucket_t *bucket,
     }
     return i;
 }
+
+
 static int
 find_closest_nodes_array(mrkdht_nid_t nid,
                          mrkdht_node_t *rv[],
@@ -1726,7 +1728,7 @@ mrkdht_init(void)
 
     MEMDEBUG_REGISTER(mrkdht);
 
-    mrkdata_init();
+    mrkrpc_init();
 
     nid_spec = mrkdata_make_spec(MRKDATA_UINT64);
 
@@ -1740,7 +1742,6 @@ mrkdht_init(void)
 
     value_spec = mrkdata_make_spec(MRKDATA_STR64);
 
-    mrkrpc_init();
 
     if (array_init(&buckets, sizeof(mrkdht_bucket_t), MRKDHT_IDLEN_BITS + 1,
                     (array_initializer_t)bucket_init,
@@ -1779,11 +1780,9 @@ mrkdht_fini(void)
 
     array_fini(&buckets);
 
-    mrkrpc_fini();
-
     node_fini(&me);
 
-    mrkdata_fini();
+    mrkrpc_fini();
 
     mflags &= ~MRKDHT_MFLAG_INITIALIZED;
 }

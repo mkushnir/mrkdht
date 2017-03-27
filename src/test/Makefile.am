@@ -36,7 +36,7 @@ testjoin_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(include
 testjoin_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdht
 
 ../diag.c ../diag.h: ../diag.txt
-	$(AM_V_GEN) /bin/sh ../gen-diag mrkdht
+	$(AM_V_GEN) cat ../diag.txt | sort -u | /bin/sh ../gen-diag mrkdht ..
 
 testrun: all
 	for i in $(noinst_PROGRAMS); do if test -x ./$$i; then LD_LIBRARY_PATH=$(libdir) ./$$i; fi; done;
