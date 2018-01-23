@@ -14,7 +14,6 @@
 //#define TRRET_DEBUG_VERBOSE
 #include <mrkcommon/dumpm.h>
 #include <mrkcommon/array.h>
-#include <mrkcommon/list.h>
 #include <mrkcommon/btrie.h>
 #include <mrkcommon/util.h>
 #include <mrkrpc.h>
@@ -469,7 +468,7 @@ register_node_from_params(mrkdht_nid_t nid,
 
 
 static int
-node_destroy(mnbtrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
+node_destroy(mnbtrie_node_t *trn, UNUSED void *udata)
 {
     mrkdht_node_t *node;
 
@@ -547,7 +546,7 @@ mrkdht_dump_node(mrkdht_node_t *node)
 }
 
 static int
-node_dump_trie(mnbtrie_node_t *trn, UNUSED uint64_t key, UNUSED void *udata)
+node_dump_trie(mnbtrie_node_t *trn, UNUSED void *udata)
 {
     if (trn->value != NULL) {
         mrkdht_dump_node(trn->value);
@@ -1469,7 +1468,7 @@ bad:
 
 
 static int
-select_alpha(mnbtrie_node_t *trn, UNUSED uint64_t key, void *udata)
+select_alpha(mnbtrie_node_t *trn, void *udata)
 {
     mrkdht_node_t *node;
     mnbtrie_node_t *ctrn;
@@ -1503,7 +1502,7 @@ select_alpha(mnbtrie_node_t *trn, UNUSED uint64_t key, void *udata)
 }
 
 static int
-select_result(mnbtrie_node_t *trn, UNUSED uint64_t key, void *udata)
+select_result(mnbtrie_node_t *trn, void *udata)
 {
     mrkdht_node_t *node;
     struct {
@@ -1722,9 +1721,7 @@ mrkdht_init(void)
     int id;
     unsigned i;
 
-    if (mflags & MRKDHT_MFLAG_INITIALIZED) {
-        return;
-    }
+    assert(!(mflags & MRKDHT_MFLAG_INITIALIZED));
 
     MEMDEBUG_REGISTER(mrkdht);
 
@@ -1746,7 +1743,7 @@ mrkdht_init(void)
     if (array_init(&buckets, sizeof(mrkdht_bucket_t), MRKDHT_IDLEN_BITS + 1,
                     (array_initializer_t)bucket_init,
                     (array_finalizer_t)bucket_fini) != 0) {
-        FAIL("list_init");
+        FAIL("array_init");
     }
 
     id = 0;
@@ -1769,9 +1766,7 @@ mrkdht_init(void)
 void
 mrkdht_fini(void)
 {
-    if (!(mflags & MRKDHT_MFLAG_INITIALIZED)) {
-        return;
-    }
+    assert(mflags & MRKDHT_MFLAG_INITIALIZED);
 
     btrie_traverse(&nodes, node_destroy, NULL);
     btrie_fini(&nodes);
