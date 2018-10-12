@@ -7,7 +7,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "diag.h"
 #include <mrkcommon/dumpm.h>
 #include <mrkcommon/profile.h>
 #include <mrkcommon/memdebug.h>
@@ -16,6 +15,8 @@ MEMDEBUG_DECLARE(testfoo)
 #include <mrkthr.h>
 #include <mrkapp.h>
 #include <mrkdht.h>
+
+#include "diag.h"
 
 #ifndef NDEBUG
 const char *malloc_options = "AJ";

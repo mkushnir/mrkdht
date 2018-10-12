@@ -175,7 +175,7 @@ refresher(UNUSED int argc, UNUSED void **argv)
             break;
         }
 
-        now = mrkthr_get_now();
+        now = mrkthr_get_now_nsec();
         trefresh_nsec = trefresh * 1000000;
 
 
@@ -690,7 +690,7 @@ bucket_put_node(mrkdht_bucket_t *bucket, mrkdht_node_t *node, unsigned flags)
             //CTRACE("bucket after E (%ld):", DTQUEUE_LENGTH(&bucket->nodes));
             //bucket_dump(bucket, NULL);
 
-            bucket->last_accessed = mrkthr_get_now();
+            bucket->last_accessed = mrkthr_get_now_nsec();
 
             //CTRACE("not putting node:");
             //node_dump(&node, NULL);
@@ -704,15 +704,15 @@ bucket_put_node(mrkdht_bucket_t *bucket, mrkdht_node_t *node, unsigned flags)
             forget_node_bucket(bucket, oldest);
 
             /* ... and welcome the newcomer */
-            node->last_seen = mrkthr_get_now();
+            node->last_seen = mrkthr_get_now_nsec();
             DTQUEUE_ENQUEUE(&bucket->nodes, link, node);
-            bucket->last_accessed = mrkthr_get_now();
+            bucket->last_accessed = mrkthr_get_now_nsec();
         }
 
     } else {
-        node->last_seen = mrkthr_get_now();
+        node->last_seen = mrkthr_get_now_nsec();
         DTQUEUE_ENQUEUE(&bucket->nodes, link, node);
-        bucket->last_accessed = mrkthr_get_now();
+        bucket->last_accessed = mrkthr_get_now_nsec();
     }
 
     //CTRACE("final bucket:");
@@ -726,7 +726,7 @@ stamp_bucket(mrkdht_node_t *node)
     mrkdht_bucket_t *bucket;
 
     bucket = buckets_get_bucket(node->distance);
-    bucket->last_accessed = mrkthr_get_now();
+    bucket->last_accessed = mrkthr_get_now_nsec();
 }
 
 
@@ -1708,7 +1708,7 @@ mrkdht_shutdown(void)
 static int
 bucket_set_id(mrkdht_bucket_t *bucket, int *id)
 {
-    bucket->last_accessed = mrkthr_get_now();
+    bucket->last_accessed = mrkthr_get_now_nsec();
     bucket->id = *id;
     ++(*id);
     return 0;
