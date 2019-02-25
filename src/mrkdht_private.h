@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 
-#include <mrkcommon/list.h>
 #include <mrkcommon/dtqueue.h>
 #include <mrkrpc.h>
 
